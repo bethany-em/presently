@@ -1,0 +1,55 @@
+* {
+  scrollbar-color: #222 #444;
+}
+
+.h-33 {
+  height: 33% !important;
+}
+
+.bg-darker {
+  background-color: #111;
+}
+
+.bg-gradient-dark {
+  background-image: linear-gradient(to top, black, transparent);
+}
+
+.text-pre-wrap {
+  white-space: pre-wrap;
+}
+
+.object-position-top {
+  object-position: top;
+}
+
+.slide {
+  display: inline-block;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.selected {
+  outline: 2px solid orange;
+}
+
+.hover-highlight:hover {
+  background-color: #333;
+}
+
+.text-shadow {
+  text-shadow: 0px 0px 1vh black;
+}
+
+.visible-hover-child {
+  visibility: hidden !important;
+}
+
+.visible-hover-parent:hover .visible-hover-child {
+  visibility: visible !important;
+}
+
+.draggable-source--is-dragging {
+  outline: 2px solid steelblue !important;
+}
