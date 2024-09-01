@@ -18,6 +18,6 @@ export default function Editor({ value, onChange, readonly, ...rest }) {
     ref=${ref}
     data-editable
     onInput=${(ev) => onChange(ev.target.innerText)}
-    contenteditable=${readonly ? "false" : "plaintext-only"}
+    contenteditable=${readonly ? "false" : "true"}
     ...${rest} />`;
 }
