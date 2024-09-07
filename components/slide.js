@@ -9,8 +9,8 @@ const html = htm.bind(h);
 export default function Slide({
   slide,
   order,
-  width = 300,
-  height = 200,
+  width = 480,
+  height = 270,
   editable,
   selected,
   sortGroup = "",
