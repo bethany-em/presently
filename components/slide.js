@@ -2,7 +2,7 @@ import { h } from "preact";
 import { useRef } from "preact/hooks";
 import htm from "htm";
 import Editor from "./editor.js";
-import { getColor } from "./colors.js";
+import { getColor } from "../services/colors.js";
 
 const html = htm.bind(h);
 
