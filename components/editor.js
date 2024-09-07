@@ -1,8 +1,10 @@
 import { h } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { supportsPlaintextEditables } from "../services/feature-checks.js";
 import htm from "htm";
 
 const html = htm.bind(h);
+const isPlaintextEditableSupported = supportsPlaintextEditables();
 
 export default function Editor({ value, onChange, readonly, ...rest }) {
   const ref = useRef(null);
@@ -25,6 +27,6 @@ export default function Editor({ value, onChange, readonly, ...rest }) {
     ref=${ref}
     data-editable
     onInput=${(ev) => onChange(ev.target.innerText)}
-    contenteditable=${readonly ? "false" : "true"}
+    contenteditable=${readonly ? "false" : isPlaintextEditableSupported ? "plaintext-only" : "true"}
     ...${rest} />`;
 }
