@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "preact/hooks";
 import htm from "htm";
 const html = htm.bind(h);
 
-export default function Preview({ deck, slide, videoSource, height = 300, width = 400 }) {
+export default function Preview({ deck, slide, videoSource, height = 270, width = 480 }) {
   const presentationObject = slide?.length >= 2 && deck?.[slide[0]]?.[slide[1]];
   const slideObject = slide?.length === 4 && deck?.[slide[0]]?.[slide[1]]?.[slide[2]]?.[slide[3]];
 
@@ -18,24 +18,26 @@ export default function Preview({ deck, slide, videoSource, height = 300, width 
   const slideIndex = slide?.[3];
 
   useEffect(() => {
-    const message = { deck, slide, presentationObject, slideObject, showFullVideo, videoDeviceId: null };
-    if (stageWindow) {
-      stageWindow.postMessage(message);
-    }
-    if (audienceWindow) {
-      audienceWindow.postMessage({ ...message, videoDeviceId: videoSource?.deviceId });
-    }
-  }, [audienceWindow, stageWindow, deck, slide, slideObject, presentationObject, showFullVideo, videoSource]);
-
-  useEffect(() => {
-    const message = { deck, slide, presentationObject, slideObject, showFullVideo, videoDeviceId: null };
-    if (stagePreviewRef.current) {
-      stagePreviewRef.current.contentWindow.postMessage(message, "*");
-    }
-    if (audiencePreviewRef.current) {
-      audiencePreviewRef.current.contentWindow.postMessage({ ...message, videoDeviceId: videoSource?.deviceId }, "*");
-    }
-  }, [audiencePreviewRef, stagePreviewRef, deck, slide, slideObject, presentationObject, showFullVideo, videoSource]);
+    const viewState = { deck, slide, presentationObject, slideObject, showFullVideo, videoSource };
+    // preload view state
+    if (stageWindow) stageWindow.viewState = viewState;
+    if (audienceWindow) audienceWindow.viewState = viewState;
+    stageWindow?.setViewState?.(viewState);
+    audienceWindow?.setViewState?.(viewState);
+    stagePreviewRef.current?.contentWindow?.setViewState?.(viewState);
+    audiencePreviewRef?.current?.contentWindow?.setViewState?.(viewState);
+  }, [
+    audienceWindow,
+    stageWindow,
+    audiencePreviewRef,
+    stagePreviewRef,
+    deck,
+    slide,
+    slideObject,
+    presentationObject,
+    showFullVideo,
+    videoSource,
+  ]);
 
   return html`
     <div class="p-2 d-flex align-items-center justify-content-between shadow">
@@ -57,24 +59,22 @@ export default function Preview({ deck, slide, videoSource, height = 300, width 
         <h1 class="h5 mb-0 me-2">Stage</h1>
         <button
           class="btn btn-sm btn-outline-warning fw-bold"
-          onClick=${() => setStageWindow(open("view.html?title=Stage", "StageView", "width=400,height=300"))}>
+          onClick=${() => setStageWindow(open("view.html?title=Stage", "StageView", `width=${width},height=${height}`))}>
           Open
         </button>
       </div>
       <iframe ref=${stagePreviewRef} src="view.html" height=${height} width=${width} />
 
       <hr />
-
-        <div class="d-flex align-items-center mb-1">
-          <h1 class="h5 mb-0 me-2">Audience</h1>
-          <button
-            class="btn btn-sm btn-outline-warning fw-bold"
-            onClick=${() =>
-              setAudienceWindow(open("view.html?title=Audience", "AudienceView", "width=400,height=300"))}>
-            Open
-          </button>
-        </div>
-        <iframe ref=${audiencePreviewRef} src="view.html" height=${height} width=${width} />
+      <div class="d-flex align-items-center mb-1">
+        <h1 class="h5 mb-0 me-2">Audience</h1>
+        <button
+          class="btn btn-sm btn-outline-warning fw-bold"
+          onClick=${() => setAudienceWindow(open("view.html?title=Audience", "AudienceView", `width=${width},height=${height}`))}>
+          Open
+        </button>
+      </div>
+      <iframe ref=${audiencePreviewRef} src="view.html" height=${height} width=${width} />
     </div>
   `;
 }
