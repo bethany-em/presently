@@ -15,8 +15,8 @@ export default function Presentation({ deck, presentation, selected, editable, o
   const sortContainer = `presentation-sort-container-${presentationIndex}`;
   const sortGroup = `presentation-sort-item-${presentationIndex}`;
   const selectedSlide = selected?.length === 4 && deck?.[selected[0]]?.[selected[1]]?.[selected[2]]?.[selected[3]];
-  const height = 200;
-  const width = 300;
+  const height = 270;
+  const width = 480;
 
   useLayoutEffect(() => {
     if (ref.current) {
