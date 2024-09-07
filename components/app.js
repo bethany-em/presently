@@ -69,12 +69,12 @@ export default function App() {
         <div
           class="flex-grow-1 border-bottom border-secondary overflow-auto position-relative"
           style="max-height: 70vh">
-          <${Deck} deck=${deck} selected=${selectedSlide} onSelect=${setSelectedSlide} onChange=${handleChange} />
+          <${Deck} deck=${deck} selected=${selectedSlide} onSelect=${setSelectedSlide}  onChange=${handleChange} width=${480} height=${270} />
         </div>
         <${VideoSources} selected=${selectedVideoSource} onSelect=${setSelectedVideoSource} />
       </div>
-      <div class="col-3 border-start border-secondary">
-        <${Preview} deck=${deck} slide=${selectedSlide} videoSource=${selectedVideoSource} />
+      <div class="col-md-3 border-start border-secondary" style=${{minWidth: 480}}>
+        <${Preview} deck=${deck} slide=${selectedSlide} videoSource=${selectedVideoSource} width=${480} height=${270} />
       </div>
     </div>
   `;
