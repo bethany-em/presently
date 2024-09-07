@@ -42,7 +42,7 @@ export default function Slide({
         ]
           .filter(Boolean)
           .join(" ")}
-        style=${{ width, height, fontSize: 0.075 * height }}
+        style=${{ width, height, fontSize: 0.065 * height }}
         onClick=${() => (editable ? editorRef.current?.querySelector('[data-editable]')?.focus?.() : onSelect({ title, content }))}
         onDblClick=${() => editable && onSelect({ title, content })}>
         <${Editor}
