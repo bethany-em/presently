@@ -4,7 +4,7 @@ export async function getUserMedia() {
   const videoDevices = devices.filter((device) => device.kind === "videoinput");
   for (const device of videoDevices) {
     // assign stream to each device
-    device.stream = await navigator.mediaDevices.getUserMedia({ video: device });
+    device.stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: device.deviceId } });
   }
   return videoDevices;
 }
