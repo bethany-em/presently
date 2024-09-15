@@ -11,7 +11,7 @@
 }
 
 .bg-gradient-dark {
-  background-image: linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent 50%, transparent 50%);
+  background-image: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent 50%, transparent 50%);
 }
 
 .text-pre-wrap {
