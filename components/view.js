@@ -41,7 +41,7 @@ export default function View() {
     slideIndex === 0 &&
     html`<div
       class="position-absolute bottom-0 left-0 w-100 z-1 text-white text-pre-wrap opacity-25"
-      style=${{ fontSize: "1.5vh", padding: "1vh" }}>
+      style=${{ fontSize: "1.8vh", padding: "1vh" }}>
       ${presentationObject.attribution}
     </div>`}
     ${videoSource?.stream &&
