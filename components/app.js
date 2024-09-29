@@ -65,7 +65,7 @@ export default function App() {
 
   return html`
     <div class="row g-0 h-100">
-      <div class="col-9 d-flex flex-column">
+      <div class="col-xl-9 d-flex flex-column">
         <div
           class="flex-grow-1 border-bottom border-secondary overflow-auto position-relative"
           style="max-height: 70vh">
@@ -73,7 +73,7 @@ export default function App() {
         </div>
         <${VideoSources} selected=${selectedVideoSource} onSelect=${setSelectedVideoSource} />
       </div>
-      <div class="col-md-3 border-start border-secondary" style=${{minWidth: 480}}>
+      <div class="col-xl-3 border-start border-secondary">
         <${Preview} deck=${deck} slide=${selectedSlide} videoSource=${selectedVideoSource} width=${480} height=${270} />
       </div>
     </div>
