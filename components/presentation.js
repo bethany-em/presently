@@ -34,12 +34,10 @@ export default function Presentation({ deck, presentation, selected, editable, o
 
   function handleReorderSlides() {
     const slideElements = ref.current.querySelectorAll(`.${sortGroup}`);
-    console.log(slideElements)
     const newSlides = Array.from(slideElements).map((slideElement) => {
       const order = parseInt(slideElement.getAttribute("data-order"));
       return slides[order];
     });
-    console.log(newSlides)
     const newSelectedIndex = newSlides.findIndex((slide) => slide === selectedSlide);
     onSelect(["slides", newSelectedIndex]);
     onChange([], "slides", newSlides);
@@ -54,6 +52,41 @@ export default function Presentation({ deck, presentation, selected, editable, o
   function handleRemoveSlide(index) {
     const newSlides = slides.filter((_, i) => i !== index);
     onChange([], "slides", newSlides);
+  }
+
+  function handleChangeSlide(index, key, value) {
+    if (key === "content") {
+      const patterns = [
+        /^intro.*\d*.*$/gim,
+        /^verse.*\d*.*$/gim,
+        /^chorus.*\d*.*/gim,
+        /^bridge.*\d*.*/gim,
+        /^pre.*chorus.*\d*.*/gim,
+        /^instrumental.*\d*.*/gim,
+        /^interlude.*\d*.*/gim,
+        /^outro.*\d*.*/gim,
+        /^ending.*\d*.*/gim,
+      ];
+      const sections = splitIntoSections(value, patterns);
+      if (sections.length && confirm("Do you want to split this slide into multiple slides?")) {
+        const sectionSlides = sections.reduce((acc, section) => {
+          const lines = section.content.split("\n");
+          const contentChunks = chunk(lines, lines.length % 3 === 0 ? 3 : 4);
+          const slides = contentChunks.map((chunk) => ({
+            title: section.title,
+            content: chunk.join("\n"),
+            id: crypto.randomUUID(),
+          }));
+          return acc.concat(slides);
+        }, []);
+        let newSlides = [...slides];
+        newSlides.splice(index, 1, ...sectionSlides);
+        onChange([], "slides", newSlides);
+        return;
+      }
+    }
+
+    onChange(["slides", index], key, value);
   }
 
   return html`
@@ -90,7 +123,7 @@ export default function Presentation({ deck, presentation, selected, editable, o
                 selected=${selectedSlide === slide}
                 onSelect=${() => onSelect(["slides", selectedSlide === slide ? null : index])}
                 onRemove=${() => handleRemoveSlide(index)}
-                onChange=${(key, value) => onChange(["slides", index], key, value)} />`
+                onChange=${(key, value) => handleChangeSlide(index, key, value)} />`
           )}
           ${editable &&
           html`<button class="btn btn-dark fw-semibold rounded-0 m-2" style=${{ width, height }} onClick=${handleAddSlide}>
@@ -107,4 +140,35 @@ export default function Presentation({ deck, presentation, selected, editable, o
       </div>
     </div>
   `;
+}
+
+/**
+ * Chunk an array into smaller arrays of a specified size
+ * @param {any[]} arr 
+ * @param {number} size
+ * @returns {any[][]} Subarrays of the original array
+ */
+function chunk(arr, size) {
+  let chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Split text into sections based on patterns
+ * @param {string} text
+ * @param {RegExp[]} patterns
+ * @returns {{title: string, content: string}[]}
+ */
+function splitIntoSections(text, patterns) {
+  return patterns
+    .flatMap((pattern) => [...text.matchAll(pattern)])
+    .filter(Boolean)
+    .sort((a, b) => a.index - b.index)
+    .map((match, index, matches) => ({
+      title: match[0].trim(),
+      content: text.slice(match.index + match[0].length, matches[index + 1]?.index || text.length).trim(),
+    }));
 }
