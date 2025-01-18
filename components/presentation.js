@@ -66,11 +66,12 @@ export default function Presentation({ deck, presentation, selected, editable, o
         /^interlude.*\d*.*/gim,
         /^outro.*\d*.*/gim,
         /^ending.*\d*.*/gim,
+        /^vamp.*\d*.*/gim,
       ];
       const sections = splitIntoSections(value, patterns);
       if (sections.length && confirm("Do you want to split this slide into multiple slides?")) {
         const sectionSlides = sections.reduce((acc, section) => {
-          const lines = section.content.split("\n");
+          const lines = section.content.split("\n").filter(line => line.trim().length);
           const contentChunks = chunk(lines, lines.length % 3 === 0 ? 3 : 4);
           const slides = contentChunks.map((chunk) => ({
             title: section.title,
