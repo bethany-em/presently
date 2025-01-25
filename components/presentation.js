@@ -99,7 +99,7 @@ export default function Presentation({ deck, presentation, selected, editable, o
             <input
               value=${title}
               class="bg-transparent text-light border-0 fw-semibold flex-grow-1"
-              style="max-width: 500px"
+              style="max-width: 800px"
               onClick=${(ev) => ev.stopPropagation()}
               placeholder="Enter Presentation Title"
               onChange=${(ev) => onChange([], "title", ev.target.value)} />

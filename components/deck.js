@@ -3,7 +3,6 @@ import { useEffect, useState, useLayoutEffect, useRef } from "preact/hooks";
 import Sortable from "sortable";
 import htm from "htm";
 import Presentation from "./presentation.js";
-import Cameras from "./video-sources.js";
 
 const html = htm.bind(h);
 
@@ -78,6 +77,29 @@ export default function Deck({ deck, selected, onSelect = () => {}, onChange = (
     onChange("deck", "presentations", newPresentations);
   }
 
+  async function handleImport(ev) {
+    ev.preventDefault();
+    if (!ev.target.files.length) return;
+    const file = ev.target.files[0];
+    const data = await file.text();
+    const importedDeck = JSON.parse(data);
+    onChange("deck", "id", crypto.randomUUID());
+    onChange("deck", "title", importedDeck.title);
+    onChange("deck", "presentations", importedDeck.presentations);
+    ev.target.value = "";
+  }
+
+  function handleExport() {
+    const data = JSON.stringify(deck, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${deck.title}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   useEffect(() => {
     const onKeyUp = (ev) => {
       if (editable) return;
@@ -150,8 +172,13 @@ export default function Deck({ deck, selected, onSelect = () => {}, onChange = (
         onChange=${(ev) => onChange("deck", "title", ev.target.value)}
         placeholder="Enter Title" />
       <div class="d-flex align-items-center m-0">
-        ${editable && html`<button class="btn btn-sm btn-dark fw-semibold me-1" onClick=${handleAdd}>Add Presentation</button>`}
-        <div class="form-check form-check-inline form-switch m-0 me-2">
+        ${editable && html`
+          <input type="file" class="visually-hidden" id="importDeck" accept="application/json" onChange=${handleImport} />
+          <label for="importDeck" class="btn btn-sm btn-dark fw-semibold me-1">Import Deck</button>
+          <button class="btn btn-sm btn-dark fw-semibold me-1" onClick=${handleExport}>Export Deck</button>
+          <button class="btn btn-sm btn-dark fw-semibold me-1" onClick=${handleAdd}>Add Presentation</button>
+        `}
+        <div class="form-check form-check-inline form-switch m-0 me-2 ms-1">
           <label class="fw-semibold small  cursor-pointer" for="editModeToggle">Edit Mode</label>
           <input
             class="form-check-input  cursor-pointer"
