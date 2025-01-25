@@ -46,19 +46,20 @@ export default function App() {
   }, [deck]);
 
   function handleChange(el, key, value) {
-    let clone = structuredClone(deck);
-
-    if (el === "deck") {
-      clone[key] = value;
-    } else if (Array.isArray(el)) {
-      console.log(el, key, value);
-      let current = null;
-      while (el.length > 0) {
-        current = current ? current[el.shift()] : clone[el.shift()];
+    setDeck(deck => {
+      let clone = structuredClone(deck);
+      if (el === "deck") {
+        clone[key] = value;
+      } else if (Array.isArray(el)) {
+        console.log(el, key, value);
+        let current = null;
+        while (el.length > 0) {
+          current = current ? current[el.shift()] : clone[el.shift()];
+        }
+        current[key] = value;
       }
-      current[key] = value;
-    }
-    setDeck(clone);
+      return clone;
+    });
   }
 
   console.log(deck);
