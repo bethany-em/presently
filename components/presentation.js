@@ -67,6 +67,7 @@ export default function Presentation({ deck, presentation, selected, editable, o
         /^outro.*\d*.*/gim,
         /^ending.*\d*.*/gim,
         /^vamp.*\d*.*/gim,
+        /^tag.*\d*.*/gim,
       ];
       const sections = splitIntoSections(value, patterns);
       if (sections.length && confirm("Do you want to split this slide into multiple slides?")) {
