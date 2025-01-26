@@ -73,7 +73,7 @@ export default function Presentation({ deck, presentation, selected, editable, o
       if (sections.length && confirm("Do you want to split this slide into multiple slides?")) {
         const sectionSlides = sections.reduce((acc, section) => {
           const lines = section.content.split("\n").filter(line => line.trim().length);
-          const contentChunks = chunk(lines, lines.length % 3 === 0 ? 3 : 4);
+          const contentChunks = chunk(lines, lines.length % 5 === 0 ? 5 : lines.length % 3 === 0 ? 3 : 4);
           const slides = contentChunks.map((chunk) => ({
             title: section.title,
             content: chunk.join("\n"),
