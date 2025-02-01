@@ -56,14 +56,16 @@ export default function Presentation({ deck, presentation, selected, editable, o
 
   function handleChangeSlide(index, key, value) {
     if (key === "content") {
-
       const lines = value.split('\n');
       let attributionIndex = lines.findIndex(line => /song #/i.test(line));
-      if (lines[attributionIndex - 2].trim().length === 0) {
+      if (
+        attributionIndex >= 2 &&
+        lines[attributionIndex - 1].trim().length > 0 &&
+        lines[attributionIndex - 2].trim().length === 0) {
         attributionIndex --;
       }
       const newValue = lines.slice(0, attributionIndex).join('\n');
-      const newAttribution = lines.slice(attributionIndex).join('\n');
+      const newAttribution = attributionIndex >= 0 ? lines.slice(attributionIndex).join('\n') : "";
       const patterns = [
         /^intro.*\d*.*$/gim,
         /^verse.*\d*.*$/gim,
@@ -77,9 +79,10 @@ export default function Presentation({ deck, presentation, selected, editable, o
         /^vamp.*\d*.*/gim,
         /^tag.*\d*.*/gim,
       ];
-      onChange([], "attribution", newAttribution);
+
       const sections = splitIntoSections(newValue, patterns);
       if (sections.length && confirm("Do you want to split this slide into multiple slides?")) {
+        onChange([], "attribution", newAttribution);
         const sectionSlides = sections.reduce((acc, section) => {
           const lines = section.content.split("\n").filter(line => line.trim().length);
           const contentChunks = chunk(lines, lines.length % 5 === 0 ? 5 : lines.length % 3 === 0 ? 3 : 4);
