@@ -3,7 +3,7 @@ export async function getUserMedia() {
   const devices = await navigator.mediaDevices.enumerateDevices();
   const videoDevices = devices.filter((device) => device.kind === "videoinput");
   const resolutions = [
-    { width: {exact: 3840}, height: {exact: 2160 } },
+    // { width: {exact: 3840}, height: {exact: 2160 } },
     { width: {exact: 1920}, height: {exact: 1080 } },
     { width: {exact: 1600}, height: {exact: 1200 } },
     { width: {exact: 1280}, height: {exact: 720 } },
