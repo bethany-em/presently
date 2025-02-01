@@ -92,9 +92,9 @@ export default function Presentation({ deck, presentation, selected, editable, o
   }
 
   return html`
-    <div class=${`hover-highlight`}>
-      <div class="p-2 visible-hover-parent">
-        <div onClick=${() => setCollapsed(!collapsed)} class="d-flex justify-content-between align-items-center py-2 w-100 cursor-pointer">
+    <div class="hover-highlight">
+      <div class="p-2 visible-hover-parent  position-sticky bg-dark top-0 z-3">
+        <div onClick=${(ev) => {setCollapsed(!collapsed); setTimeout(() => ev?.target?.parentElement?.scrollIntoView?.(), 10)}} class="d-flex justify-content-between align-items-center py-2 w-100 cursor-pointer" >
           <div class="d-flex flex-grow-1">
             ${collapsed ? html`<i class="bi bi-caret-right me-2"></i>` : html`<i class="bi bi-caret-down me-2"></i>`}
             <input

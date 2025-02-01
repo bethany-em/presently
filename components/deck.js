@@ -191,7 +191,7 @@ export default function Deck({ deck, selected, onSelect = () => {}, onChange = (
       </div>
     </div>
 
-    <div ref=${ref} class=${sortContainer}>
+    <div ref=${ref} class=${[sortContainer, "position-relative"].join(" ")}>
       ${presentations.map(
         (presentation, index) =>
           html`<div class=${sortGroup} data-order=${index} key=${presentation.id}>
