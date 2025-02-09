@@ -199,6 +199,7 @@ export default function Deck({ deck, selected, onSelect = () => {}, onChange = (
               deck=${deck}
               presentation=${presentation}
               editable=${editable}
+              setEditable=${setEditable}
               selected=${selected}
               onRemove=${() => confirm(`Please confirm you wish to remove ${presentation.title}`) && handleRemove(index)}
               onSelect=${(el) => onSelect(["presentations", index].concat(el))}

@@ -6,7 +6,7 @@ import Slide from "./slide.js";
 
 const html = htm.bind(h);
 
-export default function Presentation({ deck, presentation, selected, editable, onChange, onSelect, onRemove }) {
+export default function Presentation({ deck, presentation, selected, editable, setEditable, onChange, onSelect, onRemove }) {
   const ref = useRef(null);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -117,7 +117,6 @@ export default function Presentation({ deck, presentation, selected, editable, o
               placeholder="Enter Presentation Title"
               onChange=${(ev) => onChange([], "title", ev.target.value)} />
           </div>
-
           <button class="btn btn-sm btn-dark fw-semibold visible-hover-child presentation-draggable-handle me-1">Move</button>
           <button class="btn btn-sm btn-danger fw-semibold visible-hover-child" onClick=${onRemove}>Remove</button>
         </div>
@@ -131,6 +130,7 @@ export default function Presentation({ deck, presentation, selected, editable, o
                 order=${index}
                 sortGroup=${sortGroup}
                 editable=${editable}
+                setEditable=${setEditable}
                 slide=${slide}
                 width=${width}
                 height=${height}

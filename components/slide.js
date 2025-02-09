@@ -12,6 +12,7 @@ export default function Slide({
   width = 480,
   height = 270,
   editable,
+  setEditable = () => {},
   selected,
   sortGroup = "",
   onRemove = () => {},
@@ -20,7 +21,6 @@ export default function Slide({
 }) {
   const { title, content } = slide;
   const editorRef = useRef(null);
-
   return html`
     <div
       class=${["position-relative m-2 visible-hover-parent", selected && "selected", sortGroup].join(" ")}
@@ -44,7 +44,7 @@ export default function Slide({
           .join(" ")}
         style=${{ width, height, fontSize: 0.065 * height }}
         onClick=${() => (editable ? editorRef.current?.querySelector('[data-editable]')?.focus?.() : onSelect({ title, content }))}
-        onDblClick=${() => editable && onSelect({ title, content })}>
+        onDblClick=${() => { editable && onSelect({ title, content }); setEditable(!editable) } }>
         <${Editor}
           readonly=${!editable}
           value=${content}
