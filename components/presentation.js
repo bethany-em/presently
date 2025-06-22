@@ -115,7 +115,17 @@ export default function Presentation({ deck, presentation, selected, editable, s
               style="max-width: 800px"
               onClick=${(ev) => ev.stopPropagation()}
               placeholder="Enter Presentation Title"
-              onChange=${(ev) => onChange([], "title", ev.target.value)} />
+              onKeyUp=${(ev) => onChange([], "title", ev.target.value)} />
+          </div>
+          <div class="visible-hover-child form-check form-check-inline form-switch pe-1 m-0" onClick=${(ev) => ev.stopPropagation()}>
+            <label class="fw-semibold small  cursor-pointer" for="editModeToggle">Edit</label>
+            <input
+              class="form-check-input  cursor-pointer"
+              type="checkbox"
+              role="switch"
+              id="editModeToggle"
+              checked=${editable}             
+              onChange=${(ev) => { ev.preventDefault(); setEditable(ev.target.checked) }} />
           </div>
           <button class="btn btn-sm btn-dark fw-semibold visible-hover-child presentation-draggable-handle me-1">Move</button>
           <button class="btn btn-sm btn-danger fw-semibold visible-hover-child" onClick=${onRemove}>Remove</button>
