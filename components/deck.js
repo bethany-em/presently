@@ -102,8 +102,7 @@ export default function Deck({ deck, selected, onSelect = () => {}, onChange = (
 
   useEffect(() => {
     const onKeyUp = (ev) => {
-      if (editable) return;
-      console.log(ev.key);
+      if (editable || !ev.target.hasAttribute('data-order')) return;
       switch (ev.key) {
         case "Escape":
           onSelect([]);
