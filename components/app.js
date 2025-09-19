@@ -70,7 +70,7 @@ export default function App() {
         <div
           class="flex-grow-1 border-bottom border-secondary overflow-auto position-relative"
           style="max-height: 70vh">
-          <${Deck} deck=${deck} selected=${selectedSlide} onSelect=${setSelectedSlide}  onChange=${handleChange} width=${480} height=${270} />
+          <${Deck} deck=${deck} setDeck=${setDeck} selected=${selectedSlide} onSelect=${setSelectedSlide}  onChange=${handleChange} width=${480} height=${270} />
         </div>
         <${VideoSources} selected=${selectedVideoSource} onSelect=${setSelectedVideoSource} />
       </div>

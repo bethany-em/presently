@@ -14,7 +14,7 @@ const scrollToSelector = (selector) => {
   });
 };
 
-export default function Deck({ deck, selected, onSelect = () => {}, onChange = () => {} }) {
+export default function Deck({ deck, setDeck, selected, onSelect = () => {}, onChange = () => {} }) {
   const { title, presentations } = deck;
   const [editable, setEditable] = useState(false);
   const ref = useRef(null);
@@ -196,6 +196,7 @@ export default function Deck({ deck, selected, onSelect = () => {}, onChange = (
           html`<div class=${sortGroup} data-order=${index} key=${presentation.id}>
             <${Presentation}
               deck=${deck}
+              setDeck=${setDeck}
               presentation=${presentation}
               editable=${editable}
               setEditable=${setEditable}

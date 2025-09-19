@@ -6,7 +6,7 @@ import Slide from "./slide.js";
 
 const html = htm.bind(h);
 
-export default function Presentation({ deck, presentation, selected, editable, setEditable, onChange, onSelect, onRemove }) {
+export default function Presentation({ deck, setDeck, presentation, selected, editable, setEditable, onChange, onSelect, onRemove }) {
   const ref = useRef(null);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -103,6 +103,17 @@ export default function Presentation({ deck, presentation, selected, editable, s
     onChange(["slides", index], key, value);
   }
 
+  function handleAddPresentation(ev) {
+    ev.stopPropagation();
+    setDeck(deck => {
+      let clone = structuredClone(deck);
+      const newPresentation = { title: "New Presentation", slides: [], attribution: "", id: crypto.randomUUID() };
+      const index = clone.presentations.indexOf(presentation);
+      clone.presentations.splice(index + 2, 0, newPresentation);
+      return clone;
+    });
+  }
+
   return html`
     <div class="hover-highlight">
       <div class="p-2 visible-hover-parent  position-sticky bg-dark top-0 z-3">
@@ -117,6 +128,7 @@ export default function Presentation({ deck, presentation, selected, editable, s
               placeholder="Enter Presentation Title"
               onKeyUp=${(ev) => onChange([], "title", ev.target.value)} />
           </div>
+          ${editable && html`<button class="btn btn-sm btn-dark fw-semibold visible-hover-child mx-2" onClick=${handleAddPresentation}>Add Presentation</button>`}
           <div class="visible-hover-child form-check form-check-inline form-switch pe-1 m-0" onClick=${(ev) => ev.stopPropagation()}>
             <label class="fw-semibold small  cursor-pointer" for="editModeToggle">Edit</label>
             <input
