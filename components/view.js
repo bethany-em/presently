@@ -29,10 +29,10 @@ export default function View() {
     html`<div
       class=${[
         "text-white position-absolute bottom-0 left-0 d-flex justify-content-center w-100 z-1 text-pre-wrap text-center fw-semibold h-100 text-shadow bg-gradient-dark",
-        videoSource?.stream ? "align-items-end" : "align-items-center",
+        videoSource?.stream ? "align-items-end" : "align-items-start",
       ].join(" ")}
       style=${{
-        fontSize: "6.5vh",
+        fontSize: "7vh",
         padding: "5vh",
       }}>
       ${slideObject.content}
