@@ -29,9 +29,9 @@ npm test
 
 `npm test` starts Caddy when needed, opens the real HTTPS application at the Pages-shaped `/v2/` path in Chromium, runs the built-in product and resource-lifecycle tests, verifies the vendored runtime request graph, checks the controller and popup viewer, exercises 16:9, 4:3, ultrawide, portrait, DPR 2, pagehide/pageshow reconnection, 2–10 full-width deck columns, and a 390 px viewport, reports first-party JavaScript coverage, and stops only the Caddy instance it started.
 
-The implementation baseline is 36/36 built-in tests with no page errors. Tests cover complete v1 migration, normalization, import/export ordering, semantic document and screen actions, deletion-to-standby, bounded Undo/Redo, text transactions, platform history shortcuts, immediate click/double-click behavior, navigation, direct editing, paste acceptance/rejection, set collapse, native drag-and-drop, screen-local composition, blank standby, popup identity and reconnection, partial/late media acquisition, exact and retained-stream ownership, terminal disposal, denied storage, arbitrary aspect ratios, 2× subscaling, persistence, and secure-context operation.
+The implementation baseline is 38/38 built-in tests with no page errors. Tests cover complete v1 migration, normalization, import/export ordering, always-live metadata and structure controls, Operate-mode deletion and drag, lower-left multiline attribution, bounded Undo/Redo, text transactions, platform history shortcuts, immediate click/double-click behavior, navigation, direct words editing, paste acceptance/rejection, set collapse, screen-local composition, blank standby, popup identity and reconnection, partial/late media acquisition, exact and retained-stream ownership, terminal disposal, denied storage, arbitrary aspect ratios, 2× subscaling, persistence, and secure-context operation.
 
-The supplied uncovered-range calculation currently reports 86.5% first-party line coverage. Coverage is diagnostic rather than an acceptance percentage. Chromium records coverage per page, so viewer-owned code appears uncovered in the controller page even though the suite opens a real viewer, synchronizes it, changes it live from 16:9 to 4:3, and verifies the viewer's pagehide/pageshow disconnect/reconnect protocol. The suite does not claim to prove browser BFCache eligibility or restoration through a real navigation.
+The supplied uncovered-range calculation currently reports 86.9% first-party line coverage. Coverage is diagnostic rather than an acceptance percentage. Chromium records coverage per page, so viewer-owned code appears uncovered in the controller page even though the suite opens a real viewer, synchronizes it, changes it live from 16:9 to 4:3, and verifies the viewer's pagehide/pageshow disconnect/reconnect protocol. The suite does not claim to prove browser BFCache eligibility or restoration through a real navigation.
 
 ## Why HTTPS is required
 
@@ -164,7 +164,7 @@ On normal startup, v2 first checks `presently.v2.deck`. If it is absent, it read
 
 Successful import and reset enter standby instead of auto-cueing a slide. Export contains only the portable deck—not screen setup, selection, devices, streams, or window handles.
 
-When neither v2 nor v1 storage exists, the initial deck is one tutorial set containing ten short slides. They explain cue toggling, global Edit mode, keys, paste splitting, label colors, drag ordering, sources, generic screens, and video-preserving standby. Reset restores the same single-set tutorial. There is no onboarding modal to dismiss before the deck can be used.
+When neither v2 nor v1 storage exists, the initial deck is one tutorial set containing ten short slides. They explain cue toggling, words-only editing, always-live metadata, keys, paste splitting, label colors, drag ordering, sources, generic screens, and video-preserving standby. Reset restores the same single-set tutorial. There is no onboarding modal to dismiss before the deck can be used.
 
 ### Operator workspace
 
@@ -222,19 +222,19 @@ There is no selected destination screen. Every open screen receives the same liv
 
 ### 2. Prepare the deck
 
-1. Enter Edit with the visible mode switch, or double-click a slide. The switch changes mode only. Double-clicking from Operate takes that slide live and focuses its editor: **Take and Edit**.
-2. Edit the deck title, set title, slide label, slide words, and set attribution directly where they appear. Changes persist immediately; there is no Save command or unsaved-draft state. Undo and Redo sit in the top Edit command band.
-3. Add sets or slides only in Edit. New slides receive focus but do not become live.
+1. Edit the deck title, set title, slide label, set attribution, and screen label directly in either mode. Reorder or remove slides and sets at any time; quiet drag/remove controls reveal on hover or keyboard focus. Changes persist immediately, and Undo/Redo remain in the second toolbar band.
+2. Enter Edit words with the visible switch, or double-click a slide, only when changing slide copy. The switch changes mode only. Double-clicking from Operate takes that slide live and focuses its editor: **Take and Edit**.
+3. Add sets or slides in either mode. Because a new blank record immediately needs copy, creation enters Edit words and focuses its editor without taking it live.
 4. Paste structured lyrics into slide words. The complete text is stored first. If useful headings are detected, accept the prompt to split it or reject the prompt to keep the paste on one slide.
 5. Reuse a label suggestion to reuse its deterministic color. Color groups controller cards; it is not sent to outputs.
 6. Drag only from the visible handle. Slides move within their set; sets move within the deck. Collapse a set to reduce visual load without changing saved data or the live cue.
-7. Import, export, and reset live in the Edit-only Deck menu. Import and reset replace the document and return the words layer to standby.
+7. Import, export, and reset remain available in the Deck menu. Import and reset replace the document and return the words layer to standby.
 
-Attribution belongs to the set and is emitted only with that set's first slide. It is edited below the set's slide grid, not on each slide.
+Attribution belongs to the set and is emitted only with that set's first slide. It is edited below the set's slide grid, not on each slide. On output it preserves authored line breaks as small, dim metadata flush to the lower-left edge with zero padding; it never replaces or resizes the main words layer.
 
 ### 3. Configure screens and video
 
-1. Add, rename, resize, or remove screens in Edit. Any number of screens is supported; labels never select special behavior.
+1. Add, rename, resize, or remove screens in either mode. Any number of screens is supported; labels never select special behavior.
 2. Choose Off, Cover, or Contain on each screen. Off suppresses the video layer for that screen. Cover fills with cropping; Contain letterboxes without cropping.
 3. Choose a camera or shared display in the source strip. Clicking the selected source again deselects it. Source selection is global, while whether it appears is screen-local.
 4. Set text placement with the 3×3 grid. Off edits the no-video alignment bank; Cover or Contain edits the with-video bank. Each screen remembers both.
@@ -244,7 +244,7 @@ Attribution belongs to the set and is emitted only with that set's first slide. 
 
 ### 4. Run the gathering
 
-1. Leave Edit with the visible mode switch to preserve the live cue, or double-click a slide to leave Edit and take that slide live.
+1. Leave Edit words with the visible mode switch to preserve the live cue, or double-click a slide to leave words editing and take that slide live.
 2. In Operate, click a slide to cue it immediately; click the live slide again to return the words layer to standby immediately.
 3. Use Left/Right for the previous or next slide across the complete deck. Use Up/Down for the first slide of the previous or next non-empty set. Navigation wraps at both ends.
 4. Press Escape to clear words. Enter or Space toggles a keyboard-focused slide immediately.
@@ -268,7 +268,9 @@ The following mode details are consequences of that end-to-end flow.
 
 - Single-click a slide to cue it.
 - Single-click the live slide again to clear only its words layer.
-- Double-click a slide to enter global Edit mode without changing the existing live cue.
+- Double-click a slide to take it live and enter Edit words.
+- Titles, labels, attribution, structure, history, document actions, and screen setup remain directly available.
+- Drag and remove controls stay visually quiet until their slide or set is hovered or keyboard-focused.
 - Left/Right move through the full flattened running order.
 - Up/Down move to the first slide of the previous/next non-empty set.
 - From standby, forward keys enter at the beginning and reverse keys enter at the end.
@@ -277,22 +279,22 @@ The following mode details are consequences of that end-to-end flow.
 - Open creates or reuses a popup keyed by stable screen ID.
 - Video mode, alignment, text rows, sources, and popup controls remain available because they affect the live composition.
 
-### Edit mode
+### Words edit mode
 
-- The deck title, set title, slide label, words, and attribution become directly editable in place.
+- Only the rendered slide words become contenteditable; all metadata and structural controls behave exactly as they do in Operate.
 - A single click in slide words edits without changing the live cue.
-- A double click leaves global Edit mode and cues that slide.
+- A double click leaves words editing and cues that slide.
 - Add set and canvas-shaped Add slide controls create records and focus the new words editor without cueing unfinished text.
 - Existing labels appear as native datalist suggestions, making consistent color grouping quick without persisting presentation colors.
 - Clicking a set header collapses it locally without changing the deck, live cue, or popup output.
-- One native drag handle and remove control appear per slide/set. Only the handle is draggable, so text selection never starts a drag.
+- One native drag handle and remove control remain available per slide/set. Only the handle is draggable, so text selection never starts a drag.
 - Drag/drop resolves before/after by stable source and target IDs; DOM order is never read back into state.
 - Document import/export/reset lives in one compact Deck menu.
 - Undo/Redo covers deck text, add/remove/reorder, paste splitting, import, and reset. It never replays cues, sources, screens, or popups.
 - `Ctrl/Cmd+Z` undoes; `Ctrl/Cmd+Shift+Z` and Windows/Linux `Ctrl+Y` redo outside a focused text control. Focused fields retain native caret-aware history.
 - Screen creation, dimensions, and removal live in each compact Screen menu.
 
-Pointer click and keyboard Enter/Space both toggle synchronously. Browsers construct a double-click from ordinary clicks, so the first click is deliberately meaningful: double-clicking from Operate takes that slide and enters Edit; double-clicking from Edit takes that slide and returns to Operate. There is no timer, pending cue, or separate per-card gesture state.
+Pointer click and keyboard Enter/Space both toggle synchronously. Browsers construct a double-click from ordinary clicks, so the first click is deliberately meaningful: double-clicking from Operate takes that slide and enters Edit words; double-clicking from Edit words takes that slide and returns to Operate. There is no timer, pending cue, or separate per-card gesture state.
 
 ### Paste flow
 
@@ -320,7 +322,7 @@ The CSS is intentionally small and native: system fonts, a dark neutral workspac
 
 On desktop the application is a fixed-height live workspace. The deck scrolls independently in the large left region, the horizontal video-source strip stays visible below it, and the screen rail scrolls independently at right. The page returns to ordinary vertical flow below 900 px so touch devices do not inherit nested viewport traps.
 
-The pinned top bar has two stable bands: editable deck identity plus live-cue status, then global mode plus Undo, Redo, and document actions. In Operate mode structural actions disappear without moving the bands. Disabled history buttons remain rendered during Edit so command geometry stays fixed. The slide grid always consumes the complete available deck width. Its lower-right control combines the explicit `Slide preview` screen reference with a slider that changes `repeat(n, minmax(0, 1fr))` from 2 to 10 columns; there are no special thumbnail widths.
+The pinned top bar has two stable bands: editable deck identity plus live-cue status, then the words-edit switch plus Undo, Redo, and document actions. Those controls remain rendered in both modes so command geometry never jumps; unavailable history buttons use their native disabled state. The slide grid always consumes the complete available deck width. Its lower-right control combines the explicit Slide preview screen reference with a slider that changes the grid from 2 to 10 columns; there are no special thumbnail widths.
 
 Slide-label color is structural information. Labels are trimmed, whitespace-collapsed, lowercased, and hashed into a fixed muted palette. Equal labels always have the same color after reload, import, or reorder. Color appears only in controller chrome and never changes the output.
 
