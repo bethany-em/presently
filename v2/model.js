@@ -85,10 +85,10 @@ export const sampleDeck = makeId => ({
     createPresentation(makeId, "Presently Tutorial", [
       createSlide(makeId, "Welcome", "Presently puts words and video\nOn any screen in the room"),
       createSlide(makeId, "Cue words", "Click a slide to show it\nClick it again to clear it"),
-      createSlide(makeId, "Edit", "Double-click a slide to edit\nDouble-click again to take it live"),
+      createSlide(makeId, "Edit words", "Double-click a slide to edit its words\nDouble-click again to take it live"),
       createSlide(makeId, "Navigate", "← → moves through slides\n↑ ↓ moves through sets\nEsc clears words"),
       createSlide(makeId, "Paste", "Paste Verse and Chorus text\nChoose whether to split it"),
-      createSlide(makeId, "Labels", "Reuse labels for visual grouping\nColor makes structure easy to scan"),
+      createSlide(makeId, "Labels", "Edit titles, labels, and attribution anytime\nColor makes structure easy to scan"),
       createSlide(makeId, "Reorder", "Drag a slide or set by its handle\nThe live cue follows its identity"),
       createSlide(makeId, "Sources", "Choose a camera or share a display\nRefresh to rebuild the source strip"),
       createSlide(makeId, "Screens", "Every named screen remembers\nVideo, position, rows, and resolution"),

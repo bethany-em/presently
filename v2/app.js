@@ -146,8 +146,11 @@ function App(environment, bootstrap, capture) {
   let focusRequest = 0;
   let disposed = false;
 
-  const beginDeckEdit = label => {
-    if (editing()) history.begin(label);
+  const beginDeckChange = label => history.begin(label);
+  const setWordsEditing = value => {
+    if (!value) history.commit();
+    setEditing(Boolean(value));
+    if (!value) setFocusedSlideId(null);
   };
 
   const focusSlide = id => {
@@ -159,11 +162,7 @@ function App(environment, bootstrap, capture) {
   };
 
   const actions = {
-    editing: value => {
-      if (!value) history.commit();
-      setEditing(Boolean(value));
-      if (!value) setFocusedSlideId(null);
-    },
+    editing: setWordsEditing,
     deckTitle: controller.deck.setTitle,
     select: controller.cue.select,
     clearSelection: controller.cue.clear,
@@ -173,6 +172,7 @@ function App(environment, bootstrap, capture) {
     slideContent: controller.deck.setSlideContent,
     addPresentation: () => {
       const created = controller.deck.addPresentation();
+      setWordsEditing(true);
       focusSlide(created.slideId);
       return created.presentationId;
     },
@@ -187,7 +187,10 @@ function App(environment, bootstrap, capture) {
     movePresentation: controller.deck.movePresentation,
     addSlide: presentationId => {
       const id = controller.deck.addSlide(presentationId);
-      if (id) focusSlide(id);
+      if (id) {
+        setWordsEditing(true);
+        focusSlide(id);
+      }
       return id;
     },
     removeSlide: (presentationId, slideId) => {
@@ -365,7 +368,7 @@ function App(environment, bootstrap, capture) {
             onOverflow=${value => setOverflow(value)}
             onTextInput=${updateText}
             onTextFocus=${event => {
-              beginDeckEdit("Edit slide");
+              beginDeckChange("Edit slide");
               setFocusedSlideId(props.slide.id);
             }}
             onTextBlur=${event => {
@@ -378,23 +381,20 @@ function App(environment, bootstrap, capture) {
           <input aria-label="Slide label"
             list="slide-labels"
             value=${() => props.slide.title}
-            readonly=${() => !editing()}
-            onFocus=${event => beginDeckEdit("Edit slide label")}
+            onFocus=${event => beginDeckChange("Edit slide label")}
             onBlur=${event => history.commit()}
-              onInput=${event => actions.slideTitle(props.presentation.id, props.slide.id, event.currentTarget.value)}>
+            onInput=${event => actions.slideTitle(props.presentation.id, props.slide.id, event.currentTarget.value)}>
         </div>
         <${Show} when=${() => overflow() && (isSelected() || isFocused())}>
           <span class="overflow-warning">Text exceeds safe area</span>
         <//>
-        <${Show} when=${editing}>
-          <span class="slide-tools">
-            <button class="drag-handle" draggable="true" aria-label="Drag slide"
-              onDragStart=${event => beginDrag(event, { type: "slide", id: props.slide.id, presentationId: props.presentation.id })}
-              onDragEnd=${clearDrag}>↕</button>
-            <button class="danger" aria-label="Remove slide"
-              onClick=${() => actions.removeSlide(props.presentation.id, props.slide.id)}>×</button>
-          </span>
-        <//>
+        <span class="slide-tools">
+          <button class="drag-handle" draggable="true" aria-label="Drag slide"
+            onDragStart=${event => beginDrag(event, { type: "slide", id: props.slide.id, presentationId: props.presentation.id })}
+            onDragEnd=${clearDrag}>↕</button>
+          <button class="danger" aria-label="Remove slide"
+            onClick=${() => actions.removeSlide(props.presentation.id, props.slide.id)}>×</button>
+        </span>
       </article>
     `;
   }
@@ -427,20 +427,17 @@ function App(environment, bootstrap, capture) {
               onClick=${event => { event.stopPropagation(); setCollapsed(value => !value); }}>${() => collapsed() ? "▸" : "▾"}</button>
             <input class="presentation-title" aria-label="Set title"
               value=${() => props.presentation.title}
-              readonly=${() => !editing()}
-              onFocus=${event => beginDeckEdit("Edit set title")}
+              onFocus=${event => beginDeckChange("Edit set title")}
               onBlur=${event => history.commit()}
               onInput=${event => actions.presentationTitle(props.presentation.id, event.currentTarget.value)}>
             <span class="meta">${() => `${props.presentation.slides.length} slide${props.presentation.slides.length === 1 ? "" : "s"}`}</span>
           </div>
-          <${Show} when=${editing}>
-            <div class="set-tools">
-              <button class="drag-handle" draggable="true" aria-label="Drag set"
-                onDragStart=${event => beginDrag(event, { type: "presentation", id: props.presentation.id })}
-                onDragEnd=${clearDrag}>↕</button>
-              <button class="danger" aria-label="Remove set" onClick=${remove}>×</button>
-            </div>
-          <//>
+          <div class="set-tools">
+            <button class="drag-handle" draggable="true" aria-label="Drag set"
+              onDragStart=${event => beginDrag(event, { type: "presentation", id: props.presentation.id })}
+              onDragEnd=${clearDrag}>↕</button>
+            <button class="danger" aria-label="Remove set" onClick=${remove}>×</button>
+          </div>
         </header>
         <${Show} when=${() => !collapsed()}>
           <div class="slide-grid">
@@ -452,17 +449,13 @@ function App(environment, bootstrap, capture) {
                   presentation=${() => props.presentation} />
               `}
             <//>
-            <${Show} when=${editing}>
-              <button class="add-slide" onClick=${() => actions.addSlide(props.presentation.id)}>Add slide</button>
-            <//>
+            <button class="add-slide" onClick=${() => actions.addSlide(props.presentation.id)}>Add slide</button>
           </div>
-          <${Show} when=${editing}>
-            <textarea class="attribution-field" aria-label="Set attribution" placeholder="Attribution"
-              value=${() => props.presentation.attribution}
-              onFocus=${event => beginDeckEdit("Edit attribution")}
-              onBlur=${event => history.commit()}
-              onInput=${event => actions.presentationAttribution(props.presentation.id, event.currentTarget.value)}></textarea>
-          <//>
+          <textarea class="attribution-field" aria-label="Set attribution" placeholder="Attribution"
+            value=${() => props.presentation.attribution}
+            onFocus=${event => beginDeckChange("Edit attribution")}
+            onBlur=${event => history.commit()}
+            onInput=${event => actions.presentationAttribution(props.presentation.id, event.currentTarget.value)}></textarea>
         <//>
       </section>
     `;
@@ -501,8 +494,7 @@ function App(environment, bootstrap, capture) {
           <div class="toolbar-identity">
             <input class="deck-title" aria-label="Deck title"
               value=${() => deck.title}
-              readonly=${() => !editing()}
-              onFocus=${event => beginDeckEdit("Edit deck title")}
+              onFocus=${event => beginDeckChange("Edit deck title")}
               onBlur=${event => history.commit()}
               onInput=${event => actions.deckTitle(event.currentTarget.value)}>
             <div class="cue-readout" classList=${() => ({ live: Boolean(liveEntry()) })}>
@@ -513,30 +505,28 @@ function App(environment, bootstrap, capture) {
             <label class="edit-switch">
               <input data-test="edit-mode" type="checkbox" checked=${editing}
                 onChange=${event => actions.editing(event.currentTarget.checked)}>
-              <span>${() => editing() ? "Edit mode" : "Operate"}</span>
+              <span>${() => editing() ? "Edit words" : "Operate"}</span>
             </label>
             <div class="toolbar-actions">
-              <${Show} when=${editing}>
-                <button data-test="undo" disabled=${() => !history.canUndo()}
-                  title=${() => history.undoLabel() ? `Undo ${history.undoLabel()} (Ctrl+Z)` : "Nothing to undo"}
-                  aria-keyshortcuts="Control+Z Meta+Z"
-                  onClick=${event => actions.undo()}>Undo</button>
-                <button data-test="redo" disabled=${() => !history.canRedo()}
-                  title=${() => history.redoLabel() ? `Redo ${history.redoLabel()} (Ctrl+Shift+Z)` : "Nothing to redo"}
-                  aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
-                  onClick=${event => actions.redo()}>Redo</button>
-                <button data-test="add-set" onClick=${() => actions.addPresentation()}>Add set</button>
-                <details class="document-menu">
-                  <summary>Deck</summary>
-                  <div class="menu-panel">
-                    <button onClick=${() => fileInput.click()}>Import</button>
-                    <button onClick=${event => actions.exportDeck(event)}>Export</button>
-                    <button class="danger" onClick=${reset}>Reset tutorial</button>
-                  </div>
-                </details>
-                <input ref=${node => fileInput = node} class="file-input" type="file"
-                  accept="application/json" onChange=${importDeck}>
-              <//>
+              <button data-test="undo" disabled=${() => !history.canUndo()}
+                title=${() => history.undoLabel() ? `Undo ${history.undoLabel()} (Ctrl+Z)` : "Nothing to undo"}
+                aria-keyshortcuts="Control+Z Meta+Z"
+                onClick=${event => actions.undo()}>Undo</button>
+              <button data-test="redo" disabled=${() => !history.canRedo()}
+                title=${() => history.redoLabel() ? `Redo ${history.redoLabel()} (Ctrl+Shift+Z)` : "Nothing to redo"}
+                aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
+                onClick=${event => actions.redo()}>Redo</button>
+              <button data-test="add-set" onClick=${() => actions.addPresentation()}>Add set</button>
+              <details class="document-menu">
+                <summary>Deck</summary>
+                <div class="menu-panel">
+                  <button onClick=${() => fileInput.click()}>Import</button>
+                  <button onClick=${event => actions.exportDeck(event)}>Export</button>
+                  <button class="danger" onClick=${reset}>Reset tutorial</button>
+                </div>
+              </details>
+              <input ref=${node => fileInput = node} class="file-input" type="file"
+                accept="application/json" onChange=${importDeck}>
             </div>
           </div>
         </header>
@@ -545,7 +535,7 @@ function App(environment, bootstrap, capture) {
           <${For} each=${() => deck.presentations}>
             ${presentation => html`<${Presentation} presentation=${presentation} />`}
           <//>
-          <${Show} when=${() => editing() && !deck.presentations.length}>
+          <${Show} when=${() => !deck.presentations.length}>
             <button class="empty-add" onClick=${() => actions.addPresentation()}>Add set</button>
           <//>
         </div>
@@ -631,7 +621,6 @@ function App(environment, bootstrap, capture) {
           <div class="screen-name">
             <input class="screen-label" aria-label="Screen label"
               value=${() => props.screen.label}
-              readonly=${() => !editing()}
               onInput=${event => actions.renameScreen(props.screen.id, event.currentTarget.value)}>
             <span class="screen-state" classList=${() => ({ open: isOpen() })}>
               ${() => isOpen() ? "Open" : "Closed"}
@@ -648,18 +637,16 @@ function App(environment, bootstrap, capture) {
                 <option value="contain">Contain</option>
               </select>
             </label>
-            <${Show} when=${editing}>
-              <details class="screen-menu">
-                <summary>Screen</summary>
-                <div class="menu-panel screen-settings">
-                  <label>Width <input type="number" min="1" value=${() => props.screen.width}
-                    onChange=${event => actions.screenWidth(props.screen.id, event.currentTarget.value)}></label>
-                  <label>Height <input type="number" min="1" value=${() => props.screen.height}
-                    onChange=${event => actions.screenHeight(props.screen.id, event.currentTarget.value)}></label>
-                  <button class="danger" onClick=${remove}>Remove screen</button>
-                </div>
-              </details>
-            <//>
+            <details class="screen-menu">
+              <summary>Screen</summary>
+              <div class="menu-panel screen-settings">
+                <label>Width <input type="number" min="1" value=${() => props.screen.width}
+                  onChange=${event => actions.screenWidth(props.screen.id, event.currentTarget.value)}></label>
+                <label>Height <input type="number" min="1" value=${() => props.screen.height}
+                  onChange=${event => actions.screenHeight(props.screen.id, event.currentTarget.value)}></label>
+                <button class="danger" onClick=${remove}>Remove screen</button>
+              </div>
+            </details>
           </div>
         </header>
         <${OutputCanvas}
@@ -722,7 +709,7 @@ function App(environment, bootstrap, capture) {
     const key = event.key.toLowerCase();
     const undoKey = key === "z" && !event.shiftKey;
     const redoKey = (key === "z" && event.shiftKey) || (key === "y" && event.ctrlKey && !event.metaKey);
-    if (editing() && modifier && !event.altKey && !textControl && (undoKey || redoKey)) {
+    if (modifier && !event.altKey && !textControl && (undoKey || redoKey)) {
       event.preventDefault();
       if (undoKey) actions.undo();
       else actions.redo();
@@ -785,16 +772,14 @@ function App(environment, bootstrap, capture) {
             <h2>Screens</h2>
             <p>Truthful previews of every destination</p>
           </div>
-          <${Show} when=${editing}>
-            <button onClick=${() => actions.addScreen()}>Add screen</button>
-          <//>
+          <button onClick=${() => actions.addScreen()}>Add screen</button>
         </header>
         <${Notice} text=${controller.workspace.status} />
         <div class="output-grid">
           <${For} each=${() => workspace.screens}>
             ${screen => html`<${OutputCard} screen=${screen} />`}
           <//>
-          <${Show} when=${() => editing() && !workspace.screens.length}>
+          <${Show} when=${() => !workspace.screens.length}>
             <button class="empty-add" onClick=${() => actions.addScreen()}>Add screen</button>
           <//>
         </div>

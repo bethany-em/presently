@@ -127,7 +127,7 @@ summary::-webkit-details-marker { display: none; }
 .canvas-copy > div { flex-shrink: 0; max-width: 100%; }
 .canvas-text { color: white; font-size: var(--font-cqw); font-weight: 700; line-height: var(--line-height); max-width: 100%; overflow-wrap: anywhere; text-align: var(--text-align); text-shadow: 0 .03em .12em #000, 0 .08em .3em #000b; white-space: pre-wrap; width: max-content; }
 .canvas-text[contenteditable="plaintext-only"] { cursor: text; min-height: 1em; }
-.attribution { bottom: 2.5%; color: #fff; font-size: 2.2cqw; left: var(--safe-x); overflow: hidden; position: absolute; right: var(--safe-x); text-align: right; text-overflow: ellipsis; text-shadow: 0 1px 4px #000; white-space: nowrap; }
+.attribution { bottom: 0; color: rgb(255 255 255 / .55); font-size: 1.35cqw; left: 0; line-height: 1.2; max-width: 70%; overflow-wrap: anywhere; padding: 0; position: absolute; text-align: left; text-shadow: 0 1px 3px #000; white-space: pre-wrap; }
 
 .composition-controls { align-items: end; display: flex; gap: 1rem; justify-content: space-between; padding-top: .5rem; }
 .position-control { border: 0; margin: 0; padding: 0; }

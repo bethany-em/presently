@@ -426,6 +426,68 @@ export async function runTests(app) {
     assert([...document.querySelectorAll(".output-card .canvas-text")].every(node => !node.innerText), "standby preview was not blank");
   });
 
+  test("keeps metadata and document structure live in Operate", async () => {
+    await reset();
+    const firstSet = deck.presentations[0];
+    const firstSlide = firstSet.slides[0];
+    const fields = [
+      [document.querySelector(".deck-title"), "Working deck"],
+      [document.querySelector(".presentation-title"), "Opening set"],
+      [document.querySelector(".slide-caption input"), "Arrival"],
+      [document.querySelector(".attribution-field"), "Written by A\nPerformed by B"],
+      [document.querySelector(".screen-label"), "Main wall"]
+    ];
+    assert(!editing() && fields.every(([field]) => !field.readOnly),
+      "Operate locked directly editable metadata");
+    assert(document.querySelector('[data-test="undo"]')
+      && document.querySelector('[data-test="add-set"]')
+      && document.querySelector(".add-slide")
+      && document.querySelector(".document-menu")
+      && document.querySelector(".screen-menu")
+      && document.querySelector(".output-head button"),
+    "Operate hid document or screen structure controls");
+
+    for (const [field, value] of fields) {
+      field.focus();
+      field.value = value;
+      field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+      field.blur();
+    }
+    await wait();
+    assert(deck.title === "Working deck" && firstSet.title === "Opening set"
+      && firstSlide.title === "Arrival" && firstSet.attribution === "Written by A\nPerformed by B"
+      && workspace.screens[0].label === "Main wall",
+    "Operate metadata edits did not reach their owners");
+    assert(history.canUndo(), "Operate metadata edits were not undoable");
+
+    actions.select(firstSet.id, firstSlide.id);
+    document.querySelector('[aria-label="Remove slide"]').click();
+    await wait();
+    assert(selected() === null && !firstSet.slides.some(slide => slide.id === firstSlide.id),
+      "Operate deletion did not remove and deselect the live slide");
+    actions.undo();
+    assert(firstSet.slides.some(slide => slide.id === firstSlide.id) && selected() === null && !editing(),
+      "undoing Operate deletion did not safely restore standby");
+  });
+
+  test("renders small multiline attribution at the lower left", async () => {
+    await reset();
+    const firstSet = deck.presentations[0];
+    actions.presentationAttribution(firstSet.id, "Written by A\nPerformed by B");
+    actions.select(firstSet.id, firstSet.slides[0].id);
+    await wait();
+    const card = document.querySelector(".output-card");
+    const attribution = card.querySelector(".attribution");
+    const style = getComputedStyle(attribution);
+    const wordsSize = parseFloat(getComputedStyle(card.querySelector(".canvas-text")).fontSize);
+    assert(attribution.innerText === "Written by A\nPerformed by B", "attribution lost its line break");
+    assert(style.left === "0px" && style.bottom === "0px" && style.padding === "0px"
+      && style.textAlign === "left" && style.whiteSpace === "pre-wrap",
+    "attribution was not anchored flush to the lower left");
+    assert(style.color.includes("0.55") && parseFloat(style.fontSize) < wordsSize,
+      "attribution was not visually dim and subordinate");
+  });
+
   test("cues immediately and gives double click explicit take-and-edit semantics", async () => {
     await reset();
     const [preview, next] = document.querySelectorAll(".slide-preview");
@@ -467,8 +529,6 @@ export async function runTests(app) {
 
   test("groups field edits and exposes safe top-bar history", async () => {
     await reset();
-    actions.editing(true);
-    await wait();
     const originalTitle = deck.title;
     const changedTitle = "History deck";
     const title = document.querySelector(".deck-title");
@@ -532,9 +592,9 @@ export async function runTests(app) {
     actions.resetDeck();
     actions.undo();
     assert(deck.title === "New branch", "tutorial reset was not undoable");
-    actions.editing(false);
     await wait();
-    assert(!document.querySelector('[data-test="undo"]'), "history controls remained visible in Operate");
+    assert(!editing() && document.querySelector('[data-test="undo"]'),
+      "history controls were not stable in Operate");
   });
 
   test("offers section splitting on paste and honors rejection", async () => {
@@ -759,11 +819,10 @@ export async function runTests(app) {
 
   test("supports native drag and drop for slides and sets", async () => {
     await reset();
-    actions.editing(true);
-    await wait();
     const slideId = deck.presentations[0].slides[0].id;
     const transfer = new DataTransfer();
     const handles = document.querySelectorAll('[aria-label="Drag slide"]');
+    assert(handles.length && !editing(), "Operate did not expose slide drag handles");
     handles[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
     const target = document.querySelectorAll(".slide-card")[1];
     const box = target.getBoundingClientRect();
@@ -777,6 +836,7 @@ export async function runTests(app) {
     assert(deck.presentations[0].slides[1].id === slideId, "Redo did not restore slide order");
 
     actions.addPresentation();
+    actions.editing(false);
     await wait();
     const setId = deck.presentations[0].id;
     const setTransfer = new DataTransfer();
