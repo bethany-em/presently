@@ -1,0 +1,13 @@
+{
+  "name": "presently-v2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "caddy run --config Caddyfile",
+    "test": "node test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1",
+    "solid-js": "1.9.14"
+  }
+}

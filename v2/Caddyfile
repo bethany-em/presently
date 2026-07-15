@@ -1,0 +1,15 @@
+{
+	auto_https disable_redirects
+}
+
+https://localhost {
+	tls internal
+	root * .
+
+	header {
+		Cache-Control "no-store"
+		Permissions-Policy "camera=(self), display-capture=(self)"
+	}
+
+	file_server
+}
