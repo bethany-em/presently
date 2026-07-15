@@ -27,7 +27,7 @@ Run the complete suite with:
 npm test
 ```
 
-`npm test` starts Caddy when needed, opens the real HTTPS application in Chromium, runs the built-in product and resource-lifecycle tests, checks the controller and popup viewer, exercises 16:9, 4:3, ultrawide, portrait, DPR 2, pagehide/pageshow reconnection, 2–10 full-width deck columns, and a 390 px viewport, reports first-party JavaScript coverage, and stops only the Caddy instance it started.
+`npm test` starts Caddy when needed, opens the real HTTPS application at the Pages-shaped `/v2/` path in Chromium, runs the built-in product and resource-lifecycle tests, verifies the vendored runtime request graph, checks the controller and popup viewer, exercises 16:9, 4:3, ultrawide, portrait, DPR 2, pagehide/pageshow reconnection, 2–10 full-width deck columns, and a 390 px viewport, reports first-party JavaScript coverage, and stops only the Caddy instance it started.
 
 The implementation baseline is 36/36 built-in tests with no page errors. Tests cover complete v1 migration, normalization, import/export ordering, semantic document and screen actions, deletion-to-standby, bounded Undo/Redo, text transactions, platform history shortcuts, immediate click/double-click behavior, navigation, direct editing, paste acceptance/rejection, set collapse, native drag-and-drop, screen-local composition, blank standby, popup identity and reconnection, partial/late media acquisition, exact and retained-stream ownership, terminal disposal, denied storage, arbitrary aspect ratios, 2× subscaling, persistence, and secure-context operation.
 
@@ -40,6 +40,18 @@ Camera and display capture are secure-context APIs. `getUserMedia()` and `getDis
 Same-origin popup windows also matter architecturally. A live `MediaStream` is a process object, not JSON. The controller can hand that object directly to a same-origin viewer without persisting or serializing it.
 
 `file://` is deliberately not used. File documents have inconsistent module, origin, popup, and media behavior and do not test the topology that the application actually depends on. Playwright ignores the local certificate error in automation; the application itself does not weaken browser security.
+
+## GitHub Pages deployment
+
+The repository workflow uploads the checked-out repository root as a static Pages artifact; it does not run `npm install` or a build. The existing root application therefore remains at the repository URL, while this application is served from its preserved subdirectory:
+
+```text
+https://<owner>.github.io/<repository>/v2/
+```
+
+Every runtime URL is relative to `v2/index.html`. Styles, application modules, popup viewers, and the Solid import map consequently stay below `/v2/` for both project Pages and custom domains. The root workflow needs no v2-specific copy step, base-path rewrite, or redirect. Because v1 and v2 share the Pages origin, v2 can still read and copy the legacy `deck` storage key without modifying v1.
+
+GitHub Pages has no `node_modules`, so the four reviewed Solid 1.9.14 browser modules are committed byte-for-byte under `vendor/solid-js/`, together with Solid's license. `solid-js` remains an exact dev dependency for source inspection and controlled upgrades; it is not a deployed runtime dependency. When Solid changes, update the package and lockfile, re-review the installed sources, replace all four vendored modules and the license from that exact package, then run `npm test`. The harness byte-compares every vendored file with the installed package, and the browser shell fails if the application requests `/node_modules/` or does not load every expected vendored Solid entrypoint.
 
 ## Source map
 
@@ -57,10 +69,11 @@ Same-origin popup windows also matter architecturally. A live `MediaStream` is a
 | `tests.js` | Built-in browser tests, loaded only with `?test=1` |
 | `test.js` | Caddy/Playwright orchestration, popup and geometry checks, and module coverage |
 | `Caddyfile` | Local HTTPS static server |
+| `vendor/solid-js/` | Exact deployable Solid 1.9.14 browser modules and upstream license |
 | `docs/spec.md` | Ignored canonical product and acceptance contract |
 | `docs/plan.md` | Ignored design record; never included in source control |
 
-The runtime uses local files from the installed `solid-js` package. There is no bundler, JSX transform, Vite server, CDN, or build step.
+The runtime uses the committed files in `vendor/solid-js/`. There is no bundler, JSX transform, Vite server, CDN, deployed `node_modules`, or build step.
 
 ## What v1 does
 
@@ -366,7 +379,7 @@ Viewer payloads contain plain composition data plus the same-origin `MediaStream
 
 ## Why Solid and what was inspected
 
-`solid-js` 1.9.14 is pinned exactly as a dev dependency because its browser source is both the runtime and part of the architectural review. Playwright 1.61.1 is also pinned exactly. The local `dist/solid.js`, `store/dist/store.js`, `web/dist/web.js`, and `html/dist/html.js` files informed the implementation.
+`solid-js` 1.9.14 is pinned exactly as a dev dependency because its browser source is both the vendored runtime and part of the architectural review. Playwright 1.61.1 is also pinned exactly. The installed `dist/solid.js`, `store/dist/store.js`, `web/dist/web.js`, and `html/dist/html.js` files were reviewed and copied byte-for-byte into `vendor/solid-js/`.
 
 - Signals notify dependent computations instead of rerunning component functions.
 - Store setters can target nested records by predicate, allowing narrow ID-based updates without cloning the deck.
@@ -377,7 +390,7 @@ Viewer payloads contain plain composition data plus the same-origin `MediaStream
 
 The last point is a buildless maintenance rule, not style trivia. Confusing getters and callbacks can invoke an action while binding a component. Tests cover the direct-edit and output-sync boundaries where that mistake is most costly.
 
-The runtime template compiler uses `new Function`. A future strict Content Security Policy must allow that behavior or move to precompiled Solid templates. Likewise, deployment must ship the mapped `node_modules` files or explicitly vendor them. Both tradeoffs are accepted here to keep local development and operation buildless.
+The runtime template compiler uses `new Function`. A future strict Content Security Policy must allow that behavior or move to precompiled Solid templates. Vendoring makes deployment self-contained but also makes upgrading Solid an explicit source-review and copy operation. Both tradeoffs are accepted to keep development and operation buildless.
 
 ## Invariants for future work
 

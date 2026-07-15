@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import https from "node:https";
 import path from "node:path";
 import process from "node:process";
@@ -6,7 +7,14 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const url = "https://localhost/index.html?test=1";
+const url = "https://localhost/v2/index.html?test=1";
+const solidRuntimeFiles = [
+  "dist/solid.js",
+  "html/dist/html.js",
+  "store/dist/store.js",
+  "web/dist/web.js",
+  "LICENSE"
+];
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 let server;
 let serverError;
@@ -54,6 +62,15 @@ async function stopServer() {
 const settle = page => page.evaluate(() => new Promise(resolve =>
   requestAnimationFrame(() => requestAnimationFrame(resolve))
 ));
+
+async function verifyVendoredSolid() {
+  for (const file of solidRuntimeFiles) {
+    const installed = await readFile(path.join(root, "node_modules", "solid-js", file));
+    const vendored = await readFile(path.join(root, "vendor", "solid-js", file));
+    if (!installed.equals(vendored)) throw new Error(`Vendored Solid file is stale: ${file}`);
+  }
+  console.log("Vendored Solid: exact solid-js 1.9.14 source");
+}
 
 async function verifyColumns(page, count) {
   await page.evaluate(value => window.presently.commands.slideColumns(value), count);
@@ -109,6 +126,7 @@ function reportCoverage(entries) {
 }
 
 try {
+  await verifyVendoredSolid();
   if (!await canReachApp()) {
     server = spawn("caddy", ["run", "--config", "Caddyfile"], { cwd: root, windowsHide: true });
     server.once("error", error => serverError = error);
@@ -121,6 +139,8 @@ try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   const pageErrors = [];
+  const runtimeRequests = [];
+  page.on("request", request => runtimeRequests.push(new URL(request.url()).pathname));
   page.on("console", message => console.log(message.text()));
   page.on("pageerror", error => {
     pageErrors.push(error.message);
@@ -131,6 +151,13 @@ try {
   await page.waitForFunction(() => window.TESTS_DONE, null, { timeout: 30000 });
 
   const builtInFailures = await page.evaluate(() => window.TESTS_FAILED);
+  const runtimeGraph = {
+    noNodeModules: runtimeRequests.every(pathname => !pathname.includes("/node_modules/")),
+    vendoredSolid: solidRuntimeFiles
+      .filter(file => file.endsWith(".js"))
+      .every(file => runtimeRequests.some(pathname => pathname.endsWith(`/vendor/solid-js/${file}`)))
+  };
+  console.log(`Runtime graph: ${Object.values(runtimeGraph).every(Boolean) ? "vendored Solid, no node_modules" : "not deployable"}`);
   const screenId = await page.evaluate(() => window.presently.queries.workspace().screens[0].id);
   const expectedCopy = await page.evaluate(id => {
     const { commands, queries } = window.presently;
@@ -223,7 +250,7 @@ try {
     deviceScaleFactor: 2
   });
   const dprPage = await dprContext.newPage();
-  await dprPage.goto("https://localhost/index.html");
+  await dprPage.goto("https://localhost/v2/index.html");
   await dprPage.waitForSelector(".slide-card .canvas");
   const dprResult = await dprPage.evaluate(() => {
     const box = document.querySelector(".slide-card .canvas").getBoundingClientRect();
@@ -241,6 +268,7 @@ try {
   const checks = [
     !builtInFailures,
     !pageErrors.length,
+    Object.values(runtimeGraph).every(Boolean),
     Object.values(columnResults).every(Boolean),
     Object.values(workspaceLayout).every(Boolean),
     Object.values(aspectResults).every(Boolean),
@@ -251,7 +279,7 @@ try {
     narrowFits
   ];
   if (!checks.every(Boolean)) {
-    throw new Error(`${builtInFailures} built-in failures, ${pageErrors.length} page errors; columns=${JSON.stringify(columnResults)} workspace=${JSON.stringify(workspaceLayout)} aspects=${JSON.stringify(aspectResults)} viewer=${viewerWidescreen}/${viewerClassic}/${viewerReconnect} dpr=${dprResult} narrow=${narrowFits}`);
+    throw new Error(`${builtInFailures} built-in failures, ${pageErrors.length} page errors; runtime=${JSON.stringify(runtimeGraph)} columns=${JSON.stringify(columnResults)} workspace=${JSON.stringify(workspaceLayout)} aspects=${JSON.stringify(aspectResults)} viewer=${viewerWidescreen}/${viewerClassic}/${viewerReconnect} dpr=${dprResult} narrow=${narrowFits}`);
   }
 } catch (error) {
   if (serverLog) console.error(serverLog.trim());
