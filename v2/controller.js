@@ -67,22 +67,20 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
   const [workspaceStatus, setWorkspaceStatus] = createSignal("");
 
   const snapshot = () => structuredClone(unwrap(deckState));
-  const cueExists = (deck, cue) => deck.presentations.some(presentation =>
-    presentation.id === cue?.presentationId
-      && presentation.slides.some(slide => slide.id === cue.slideId)
-  );
   const restore = value => {
     const next = normalizeDeck(value, newId);
     batch(() => {
       setDeck(reconcile(next));
       setWorkspace("collapsedSetIds", ids => reconcileCollapsedSetIds(next, ids));
-      if (!cueExists(next, selection())) setSelection(null);
+      if (!selectedEntry(next, selection())) setSelection(null);
     });
   };
   const history = createHistory({ snapshot, apply: restore });
 
   const setPresentation = (id, ...path) =>
     setDeck("presentations", presentation => presentation.id === id, ...path);
+  const setScreen = (id, ...path) =>
+    setWorkspace("screens", screen => screen.id === id, ...path);
   const edit = change => {
     change();
     history.touch();
@@ -114,8 +112,6 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
     state: deckState,
     status: deckStatus,
     labels,
-    beginEdit: history.begin,
-    commitEdit: history.commit,
     report: setDeckStatus,
     setTitle: value => edit(() => setDeck("title", value)),
     setPresentationTitle: (id, value) => edit(() => setPresentation(id, "title", value)),
@@ -242,25 +238,15 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
       });
       return true;
     },
-    renameScreen: (id, value) => setWorkspace("screens", screen => screen.id === id, "label", value),
-    setScreenWidth: (id, value) => setWorkspace(
-      "screens", screen => screen.id === id, "width",
-      clamp(value, 1, Number.MAX_SAFE_INTEGER, DEFAULT_SCREEN_SIZE.width)
-    ),
-    setScreenHeight: (id, value) => setWorkspace(
-      "screens", screen => screen.id === id, "height",
-      clamp(value, 1, Number.MAX_SAFE_INTEGER, DEFAULT_SCREEN_SIZE.height)
-    ),
-    setVideoMode: (id, mode) => setWorkspace(
-      "screens", screen => screen.id === id, "videoMode", ["off", "cover", "contain"].includes(mode) ? mode : "off"
-    ),
+    renameScreen: (id, value) => setScreen(id, "label", value),
+    setScreenWidth: (id, value) => setScreen(id, "width", clamp(value, 1, Number.MAX_SAFE_INTEGER, DEFAULT_SCREEN_SIZE.width)),
+    setScreenHeight: (id, value) => setScreen(id, "height", clamp(value, 1, Number.MAX_SAFE_INTEGER, DEFAULT_SCREEN_SIZE.height)),
+    setVideoMode: (id, mode) => setScreen(id, "videoMode", ["off", "cover", "contain"].includes(mode) ? mode : "off"),
     setTextPosition: (id, bank, position) => {
       if (!["withoutVideo", "withVideo"].includes(bank) || !POSITIONS.includes(position)) return;
-      setWorkspace("screens", screen => screen.id === id, "textPositions", bank, position);
+      setScreen(id, "textPositions", bank, position);
     },
-    setTextRows: (id, rows) => setWorkspace(
-      "screens", screen => screen.id === id, "textRows", clamp(rows, 1, 20, 8)
-    ),
+    setTextRows: (id, rows) => setScreen(id, "textRows", clamp(rows, 1, 20, 8)),
     setSlideColumns: value => setWorkspace("slideColumns", clamp(value, 2, 10, 2)),
     setPreviewScreen: id => {
       if (workspaceState.screens.some(screen => screen.id === id)) setWorkspace("previewScreenId", id);

@@ -189,7 +189,9 @@ export const flattenSlides = deck => deck.presentations.flatMap((presentation, p
 
 export const selectedEntry = (deck, selected) =>
   selected?.slideId
-    ? flattenSlides(deck).find(entry => entry.slide.id === selected.slideId) ?? null
+    ? flattenSlides(deck).find(entry =>
+      entry.presentation.id === selected.presentationId && entry.slide.id === selected.slideId
+    ) ?? null
     : null;
 
 export function adjacentSlide(deck, selected, step) {

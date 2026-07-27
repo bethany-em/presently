@@ -7,6 +7,26 @@ import * as domain from "./model.js";
 
 const wait = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const editText = (element, value, inputType = "insertText") => {
+  if (element.matches("[contenteditable]")) element.innerText = value;
+  else element.value = value;
+  element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType }));
+};
+const press = (target, key, options = {}) =>
+  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...options }));
+const chooseFile = (input, name, content) => {
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([content], name, { type: "application/json" }));
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+};
+const dragTo = (source, target, coordinates) => {
+  const transfer = new DataTransfer();
+  source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
+  target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer, ...coordinates }));
+  target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+};
+
 const until = async (condition, message) => {
   for (let attempt = 0; attempt < 50; attempt++) {
     if (condition()) return;
@@ -618,8 +638,7 @@ export async function runTests(app) {
 
     for (const [field, value] of fields) {
       field.focus();
-      field.value = value;
-      field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+      editText(field, value);
       field.blur();
     }
     await wait();
@@ -689,8 +708,7 @@ export async function runTests(app) {
     actions.editing(true);
     await wait();
     const editor = document.querySelector(".slide-card .canvas-text");
-    editor.innerText = "Changed directly";
-    editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    editText(editor, "Changed directly");
     await wait();
     assert(deck.presentations[0].slides[0].content === "Changed directly", "direct edit did not update the model");
     assert(JSON.parse(localStorage.getItem(storageKeys.deck)).presentations[0].slides[0].content === "Changed directly", "direct edit did not persist");
@@ -706,8 +724,7 @@ export async function runTests(app) {
     assert(undo.disabled && redo.disabled, "empty history controls were not disabled");
 
     title.focus();
-    title.value = changedTitle;
-    title.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    editText(title, changedTitle);
     await wait();
     assert(!undo.disabled && history.undoLabel() === "Edit deck title", "active text transaction was not undoable");
     title.blur();
@@ -722,39 +739,28 @@ export async function runTests(app) {
     assert(JSON.stringify(workspace) === workspaceBefore && !redo.disabled,
       "Undo changed workspace state or did not expose Redo");
 
-    window.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Z", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true
-    }));
+    press(window, "Z", { ctrlKey: true, shiftKey: true, cancelable: true });
     assert(deck.title === changedTitle, "Ctrl+Shift+Z did not redo");
-    window.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "z", ctrlKey: true, bubbles: true, cancelable: true
-    }));
+    press(window, "z", { ctrlKey: true, cancelable: true });
     assert(deck.title === originalTitle, "Ctrl+Z did not undo");
-    window.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "y", ctrlKey: true, bubbles: true, cancelable: true
-    }));
+    press(window, "y", { ctrlKey: true, cancelable: true });
     assert(deck.title === changedTitle, "Ctrl+Y did not redo");
 
     title.focus();
-    title.value = "Native field edit";
-    title.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
-    title.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "z", ctrlKey: true, bubbles: true, cancelable: true
-    }));
+    editText(title, "Native field edit");
+    press(title, "z", { ctrlKey: true, cancelable: true });
     assert(deck.title === "Native field edit", "global history hijacked a focused text field");
     title.blur();
     actions.undo();
     assert(deck.title === changedTitle, "field focus session was not one history command");
 
     title.focus();
-    title.value = changedTitle;
-    title.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    editText(title, changedTitle);
     title.blur();
     assert(history.canRedo(), "a no-op field session cleared the redo branch");
 
     title.focus();
-    title.value = "New branch";
-    title.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    editText(title, "New branch");
     title.blur();
     assert(!history.canRedo(), "a new field edit did not clear the redo branch");
 
@@ -778,14 +784,12 @@ export async function runTests(app) {
       editor.focus();
       window.confirm = () => false;
       editor.dispatchEvent(new ClipboardEvent("paste", { bubbles: true }));
-      editor.innerText = "Verse 1\nOne\nChorus\nTwo";
-      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+      editText(editor, "Verse 1\nOne\nChorus\nTwo", "insertFromPaste");
       await wait();
       assert(deck.presentations[0].slides.length === originalCount && deck.presentations[0].slides[0].content.includes("Chorus"), "rejected split did not keep one slide");
       window.confirm = () => true;
       editor.dispatchEvent(new ClipboardEvent("paste", { bubbles: true }));
-      editor.innerText = "Verse 1\nOne\nChorus\nTwo";
-      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+      editText(editor, "Verse 1\nOne\nChorus\nTwo", "insertFromPaste");
       await wait();
       assert(deck.presentations[0].slides.length === originalCount + 1, "accepted split did not replace one slide with sections");
       actions.undo();
@@ -814,8 +818,7 @@ export async function runTests(app) {
       window.confirm = () => { confirmations++; return true; };
       editor.dispatchEvent(new ClipboardEvent("paste", { bubbles: true }));
       await Promise.resolve();
-      editor.innerText = "Verse 1\nOne\nChorus\nTwo";
-      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+      editText(editor, "Verse 1\nOne\nChorus\nTwo");
       await wait();
       assert(confirmations === 0 && deck.presentations[0].slides[0].content.includes("Chorus"),
         "typing inherited stale paste state");
@@ -829,12 +832,12 @@ export async function runTests(app) {
     const first = deck.presentations[0].slides[0];
     actions.select(deck.presentations[0].id, first.id);
     const title = document.querySelector(".deck-title");
-    title.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    press(title, "ArrowRight");
     assert(selected().slideId === first.id, "input arrow changed the cue");
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    press(window, "ArrowRight");
     await wait();
     assert(selected().slideId === deck.presentations[0].slides[1].id, "global next failed");
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    press(window, "Escape");
     assert(selected() === null, "escape did not return to standby");
   });
 
@@ -842,10 +845,10 @@ export async function runTests(app) {
     await reset();
     const preview = document.querySelector(".slide-preview");
     preview.focus();
-    preview.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    press(preview, "Enter", { cancelable: true });
     await wait();
     assert(selected()?.slideId === deck.presentations[0].slides[0].id, "Enter did not cue the focused card");
-    preview.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    press(preview, "Enter", { cancelable: true });
     assert(selected() === null, "Enter did not clear the focused live card");
   });
 
@@ -973,13 +976,10 @@ export async function runTests(app) {
     await wait();
     const previousTitle = deck.title;
     const input = document.querySelector('input[type="file"]');
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([JSON.stringify({
+    chooseFile(input, "deck.json", JSON.stringify({
       title: "Imported file",
       presentations: [{ title: "One", slides: [{ title: "Notice", content: "Hello" }] }]
-    })], "deck.json", { type: "application/json" }));
-    input.files = transfer.files;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    }));
     await wait();
     assert(deck.title === "Imported file" && deck.presentations[0].slides[0].content === "Hello", "file import failed");
     assert(selected() === null, "import unexpectedly cued content");
@@ -998,10 +998,7 @@ export async function runTests(app) {
     }
     assert(download === "Imported-file.json", "export did not create the expected deck download");
 
-    const bad = new DataTransfer();
-    bad.items.add(new File(["not json"], "bad.json", { type: "application/json" }));
-    input.files = bad.files;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    chooseFile(input, "bad.json", "not json");
     await wait();
     assert(deck.title === "Imported file" && queries.notice("deck").startsWith("Import failed:"), "failed import changed the deck or missed its scoped notice");
   });
@@ -1013,16 +1010,10 @@ export async function runTests(app) {
     const input = document.querySelector('input[type="file"]');
     const reads = { first: deferred(), second: deferred() };
     const nativeText = File.prototype.text;
-    const choose = name => {
-      const transfer = new DataTransfer();
-      transfer.items.add(new File(["ignored"], name, { type: "application/json" }));
-      input.files = transfer.files;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    };
     try {
       File.prototype.text = function () { return reads[this.name.split(".")[0]].promise; };
-      choose("first.json");
-      choose("second.json");
+      chooseFile(input, "first.json", "ignored");
+      chooseFile(input, "second.json", "ignored");
       reads.second.resolve(JSON.stringify({ title: "Second", presentations: [] }));
       await wait();
       reads.first.resolve(JSON.stringify({ title: "First", presentations: [] }));
@@ -1036,14 +1027,10 @@ export async function runTests(app) {
   test("supports native drag and drop for slides and sets", async () => {
     await reset();
     const slideId = deck.presentations[0].slides[0].id;
-    const transfer = new DataTransfer();
     const handles = document.querySelectorAll('[aria-label="Move slide"]');
     assert(handles.length && !editing(), "Operate did not expose slide drag handles");
-    handles[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
     const target = document.querySelectorAll(".slide-card")[1];
-    const box = target.getBoundingClientRect();
-    target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, clientX: box.right, dataTransfer: transfer }));
-    target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    dragTo(handles[0], target, { clientX: target.getBoundingClientRect().right });
     await wait();
     assert(deck.presentations[0].slides[1].id === slideId, "slide drop did not reorder state");
     actions.undo();
@@ -1055,12 +1042,8 @@ export async function runTests(app) {
     actions.editing(false);
     await wait();
     const setId = deck.presentations[0].id;
-    const setTransfer = new DataTransfer();
-    document.querySelectorAll('[aria-label="Move set"]')[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: setTransfer }));
     const setTarget = document.querySelectorAll(".presentation")[1];
-    const setBox = setTarget.getBoundingClientRect();
-    setTarget.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, clientY: setBox.bottom, dataTransfer: setTransfer }));
-    setTarget.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: setTransfer }));
+    dragTo(document.querySelectorAll('[aria-label="Move set"]')[0], setTarget, { clientY: setTarget.getBoundingClientRect().bottom });
     await wait();
     assert(deck.presentations[1].id === setId, "set drop did not reorder state");
     actions.undo();

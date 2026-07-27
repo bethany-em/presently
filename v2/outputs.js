@@ -123,7 +123,6 @@ export function createOutputController(host) {
 
 export function createViewerConnection(host, screenId, initialView, defer = queueMicrotask) {
   const [view, setView] = createSignal(initialView);
-  const [connected, setConnected] = createSignal(false);
   let disconnect;
   let disposed = false;
 
@@ -133,12 +132,10 @@ export function createViewerConnection(host, screenId, initialView, defer = queu
   const connect = () => {
     if (disposed || disconnect) return;
     disconnect = host.connectToOpener(screenId);
-    setConnected(Boolean(disconnect));
   };
   const leave = () => {
     disconnect?.();
     disconnect = undefined;
-    setConnected(false);
   };
   const removeLifecycle = host.installPageLifecycle(leave, connect);
   defer(() => {
@@ -154,5 +151,5 @@ export function createViewerConnection(host, screenId, initialView, defer = queu
   };
 
   onCleanup(dispose);
-  return { view, connected, dispose };
+  return { view, dispose };
 }
