@@ -106,6 +106,7 @@ export function defaultWorkspace(makeId) {
   return {
     slideColumns: 2,
     previewScreenId: stage.id,
+    collapsedSetIds: [],
     screens: [stage, audience]
   };
 }
@@ -133,7 +134,15 @@ export function normalizeDeck(input, makeId) {
 
 export function normalizeWorkspace(input, makeId) {
   const source = input && typeof input === "object" ? input : {};
-  if (!Array.isArray(source.screens)) return defaultWorkspace(makeId);
+  const collapsedSetIds = [...new Set(
+    (Array.isArray(source.collapsedSetIds) ? source.collapsedSetIds : [])
+      .filter(id => typeof id === "string")
+      .map(id => id.trim())
+      .filter(Boolean)
+  )];
+  if (!Array.isArray(source.screens)) {
+    return { ...defaultWorkspace(makeId), collapsedSetIds };
+  }
   const uniqueId = uniqueIdFactory(makeId);
   const screens = source.screens.map((screen, index) => {
     const positions = screen?.textPositions ?? {};
@@ -159,8 +168,14 @@ export function normalizeWorkspace(input, makeId) {
   return {
     slideColumns: clamp(source.slideColumns, 2, 10, 2),
     previewScreenId,
+    collapsedSetIds,
     screens
   };
+}
+
+export function reconcileCollapsedSetIds(deck, ids) {
+  const existing = new Set(deck.presentations.map(presentation => presentation.id));
+  return [...new Set(Array.isArray(ids) ? ids : [])].filter(id => existing.has(id));
 }
 
 export const flattenSlides = deck => deck.presentations.flatMap((presentation, presentationIndex) =>

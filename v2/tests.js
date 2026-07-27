@@ -26,16 +26,22 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-const fakeStream = () => {
+const fakeStream = (apply = async () => {}) => {
   const listeners = new Map();
+  const constraints = [];
   const track = {
     stopped: false,
     stop() { this.stopped = true; },
-    addEventListener(type, listener) { listeners.set(type, listener); }
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    async applyConstraints(value) {
+      constraints.push(value);
+      await apply(value);
+    }
   };
   return {
-    stream: { getTracks: () => [track] },
+    stream: { getTracks: () => [track], getVideoTracks: () => [track] },
     track,
+    constraints,
     end: () => listeners.get("ended")?.()
   };
 };
@@ -113,10 +119,52 @@ export async function runTests(app) {
       fitVideo: true,
       slideColumns: 99,
       previewScreenId: "missing",
+      collapsedSetIds: ["a", "a", " ", 7],
       screens: [{ id: "a", label: "Audience", video: true, textRows: 0, width: 1024, height: 768 }]
     }, ids("screen"));
-    assert(migrated.slideColumns === 10 && migrated.previewScreenId === "a", "workspace range or reference migration failed");
+    assert(migrated.slideColumns === 10 && migrated.previewScreenId === "a"
+      && migrated.collapsedSetIds.join() === "a", "workspace range, reference, or collapse migration failed");
     assert(migrated.screens[0].videoMode === "contain" && migrated.screens[0].textRows === 1, "legacy video or rows migration failed");
+  });
+
+  test("hydrates collapse state by stable set id", () => {
+    const values = new Map();
+    const storage = {
+      get: key => values.get(key) ?? null,
+      set: (key, value) => values.set(key, value)
+    };
+    const keys = { deck: "deck", legacyDeck: "legacy", workspace: "workspace" };
+    const initialDeck = domain.normalizeDeck({
+      id: "deck",
+      title: "Saved deck",
+      presentations: [
+        { id: "first", title: "First", slides: [{ id: "slide", content: "Words" }] },
+        { id: "second", title: "Second", slides: [] }
+      ]
+    }, ids("hydrate"));
+    const initialWorkspace = domain.normalizeWorkspace({ screens: [], collapsedSetIds: [] }, ids("screen"));
+    const owned = own(() => createController({
+      initialDeck,
+      initialWorkspace,
+      storage,
+      storageKeys: keys,
+      newId: ids("persist")
+    }));
+
+    owned.value.workspace.setSetCollapsed("first", true);
+    const storedWorkspace = JSON.parse(values.get(keys.workspace));
+    storedWorkspace.collapsedSetIds.push("missing");
+    values.set(keys.workspace, JSON.stringify(storedWorkspace));
+    owned.dispose();
+
+    const hydrated = hydrateController({
+      storage,
+      storageKeys: keys,
+      newId: ids("reload"),
+      includeLegacy: false
+    });
+    assert(hydrated.workspace.collapsedSetIds.join() === "first",
+      "fresh hydration did not restore valid collapse state or discard unknown ids");
   });
 
   test("parses section paste without losing attribution", () => {
@@ -248,6 +296,121 @@ export async function runTests(app) {
     assert(camera.track.stopped, "retained camera survived terminal disposal");
   });
 
+  test("promotes only the selected camera and restores preview quality", async () => {
+    const probe = fakeStream();
+    const first = fakeStream();
+    const second = fakeStream();
+    let cameraIndex = 0;
+    let captures = 0;
+    const owned = own(() => createMediaController({
+      mediaDevices: () => ({
+        getUserMedia: async constraints => {
+          captures++;
+          if (constraints.video === true) return probe.stream;
+          return [first, second][cameraIndex++].stream;
+        },
+        enumerateDevices: async () => [
+          { kind: "videoinput", deviceId: "one", label: "One" },
+          { kind: "videoinput", deviceId: "two", label: "Two" }
+        ]
+      })
+    }));
+    const media = owned.value;
+    await media.refreshCameras();
+
+    media.toggleSource(media.cameras()[0].key);
+    await until(() => first.constraints.length === 1, "selected camera was not promoted");
+    assert(first.constraints[0].width.ideal === 1920 && first.constraints[0].height.ideal === 1080
+      && first.constraints[0].frameRate.ideal === 30, "selected camera missed program-quality constraints");
+    assert(media.selected().stream === first.stream && captures === 3,
+      "promotion replaced the inventory stream or opened a duplicate capture");
+
+    media.toggleSource(media.cameras()[1].key);
+    await until(() => first.constraints.length === 2 && second.constraints.length === 1,
+      "camera switch did not retune both streams");
+    assert(first.constraints[1].width.ideal === 640 && first.constraints[1].height.ideal === 360
+      && first.constraints[1].frameRate.ideal === 15, "previous camera did not return to preview quality");
+    assert(second.constraints[0].width.ideal === 1920 && second.constraints[0].height.ideal === 1080,
+      "newly selected camera was not promoted");
+
+    media.clearSelection();
+    await until(() => second.constraints.length === 2, "cleared camera did not return to preview quality");
+    assert(second.constraints[1].width.ideal === 640 && media.selected() === null,
+      "clearing selection left a program-quality camera active");
+    owned.dispose();
+  });
+
+  test("serializes camera tuning and reconciles the latest selection", async () => {
+    const probe = fakeStream();
+    const changes = [];
+    const camera = fakeStream(constraints => {
+      const change = deferred();
+      changes.push({ constraints, ...change });
+      return change.promise;
+    });
+    const owned = own(() => createMediaController({
+      mediaDevices: () => ({
+        getUserMedia: async constraints => constraints.video === true ? probe.stream : camera.stream,
+        enumerateDevices: async () => [{ kind: "videoinput", deviceId: "room", label: "Room" }]
+      })
+    }));
+    const media = owned.value;
+    await media.refreshCameras();
+    media.toggleSource(media.cameras()[0].key);
+    await until(() => changes.length === 1, "program tuning did not begin");
+    media.clearSelection();
+    assert(changes.length === 1, "one camera received overlapping constraint changes");
+    changes[0].resolve();
+    await until(() => changes.length === 2, "stale promotion was not reconciled");
+    assert(changes[1].constraints.width.ideal === 640, "latest preview intent did not win");
+    changes[1].resolve();
+    await Promise.resolve();
+    owned.dispose();
+  });
+
+  test("promotes the replacement when a selected camera refreshes", async () => {
+    const probes = [fakeStream(), fakeStream()];
+    const cameras = [fakeStream(), fakeStream()];
+    let generation = -1;
+    const owned = own(() => createMediaController({
+      mediaDevices: () => ({
+        getUserMedia: async constraints => constraints.video === true
+          ? probes[++generation].stream
+          : cameras[generation].stream,
+        enumerateDevices: async () => [{ kind: "videoinput", deviceId: "room", label: "Room" }]
+      })
+    }));
+    const media = owned.value;
+    await media.refreshCameras();
+    media.toggleSource(media.cameras()[0].key);
+    await until(() => cameras[0].constraints.length === 1, "initial selected camera was not promoted");
+
+    await media.refreshCameras();
+    await until(() => cameras[1].constraints.length === 1, "replacement selected camera was not promoted");
+    assert(media.selected().stream === cameras[1].stream && cameras[1].constraints[0].width.ideal === 1920,
+      "refresh lost selected camera quality or stream identity");
+    assert(cameras[0].track.stopped, "refresh left the old program-quality camera running");
+    owned.dispose();
+  });
+
+  test("keeps preview video live when high-quality tuning fails", async () => {
+    const probe = fakeStream();
+    const camera = fakeStream(async () => { throw new Error("unsupported mode"); });
+    const owned = own(() => createMediaController({
+      mediaDevices: () => ({
+        getUserMedia: async constraints => constraints.video === true ? probe.stream : camera.stream,
+        enumerateDevices: async () => [{ kind: "videoinput", deviceId: "room", label: "Room" }]
+      })
+    }));
+    const media = owned.value;
+    await media.refreshCameras();
+    media.toggleSource(media.cameras()[0].key);
+    await until(() => media.status().includes("using preview quality"), "quality fallback was not reported");
+    assert(media.selected().stream === camera.stream && !camera.track.stopped,
+      "failed quality tuning interrupted the selected preview stream");
+    owned.dispose();
+  });
+
   test("does not adopt a camera that ends during refresh", async () => {
     const probe = fakeStream();
     const first = fakeStream();
@@ -335,6 +498,12 @@ export async function runTests(app) {
     assert(owned.value.openIds().includes("screen"), "stale disconnect removed the current viewer");
     bridge.disconnect(currentTarget, "screen");
     assert(!owned.value.openIds().length, "exact disconnect left a stale viewer");
+    bridge.connect(currentTarget, "screen");
+    sendFails = true;
+    owned.value.publish([{ screenId: "screen", label: "Updated", composition: {}, source: null }]);
+    assert(!owned.value.openIds().length && owned.value.statusFor("screen").includes("lost"),
+      "a failed reactive publish silently dropped the output connection");
+    sendFails = false;
     bridge.connect(currentTarget, "screen");
     sendFails = true;
     assert(!owned.value.open({ id: "screen" }) && !owned.value.openIds().length
@@ -434,16 +603,16 @@ export async function runTests(app) {
       [document.querySelector(".deck-title"), "Working deck"],
       [document.querySelector(".presentation-title"), "Opening set"],
       [document.querySelector(".slide-caption input"), "Arrival"],
-      [document.querySelector(".attribution-field"), "Written by A\nPerformed by B"],
+      [document.querySelector(".attribution-menu textarea"), "Written by A\nPerformed by B"],
       [document.querySelector(".screen-label"), "Main wall"]
     ];
     assert(!editing() && fields.every(([field]) => !field.readOnly),
       "Operate locked directly editable metadata");
     assert(document.querySelector('[data-test="undo"]')
       && document.querySelector('[data-test="add-set"]')
-      && document.querySelector(".add-slide")
+      && document.querySelector(".set-add")
       && document.querySelector(".document-menu")
-      && document.querySelector(".screen-menu")
+      && document.querySelector(".screen-advanced")
       && document.querySelector(".output-head button"),
     "Operate hid document or screen structure controls");
 
@@ -720,10 +889,35 @@ export async function runTests(app) {
     const presentation = document.querySelector(".presentation");
     presentation.querySelector(".collapse-toggle").click();
     await wait();
-    assert(!presentation.querySelector(".slide-grid") && selected()?.slideId === slide.id, "collapse changed the cue or left slides mounted");
+    const liveCue = presentation.querySelector(".set-live-cue");
+    assert(!presentation.querySelector(".slide-grid") && selected()?.slideId === slide.id
+      && liveCue && !liveCue.hidden && liveCue.textContent.includes("LIVE · 01"),
+    "collapse changed the cue, left slides mounted, or hid the visible live state");
     presentation.querySelector(".collapse-toggle").click();
     await wait();
     assert(presentation.querySelectorAll(".slide-card").length === slides.length, "set did not expand again");
+  });
+
+  test("persists collapse state independently for each set", async () => {
+    await reset();
+    const firstId = deck.presentations[0].id;
+    const secondId = actions.addPresentation();
+
+    actions.setSetCollapsed(firstId, true);
+    actions.setSetCollapsed(secondId, true);
+    await Promise.resolve();
+
+    assert(workspace.collapsedSetIds.includes(firstId) && workspace.collapsedSetIds.includes(secondId),
+      "sets did not retain independent collapse state");
+    const stored = JSON.parse(localStorage.getItem(storageKeys.workspace));
+    assert(stored.collapsedSetIds.includes(firstId) && stored.collapsedSetIds.includes(secondId),
+      "collapse state was not saved in the workspace");
+
+    actions.setSetCollapsed(firstId, false);
+    assert(!workspace.collapsedSetIds.includes(firstId) && workspace.collapsedSetIds.includes(secondId),
+      "expanding one set changed another set");
+    actions.removePresentation(secondId);
+    assert(!workspace.collapsedSetIds.includes(secondId), "removed set left stale collapse state");
   });
 
   test("applies semantic document and screen actions by id", async () => {
@@ -749,6 +943,28 @@ export async function runTests(app) {
     assert(screen.label === "Lobby" && screen.width === 1 && workspace.previewScreenId === screenId, "screen actions failed or dimensions were not clamped");
     actions.removeScreen(screenId);
     assert(!workspace.screens.some(item => item.id === screenId), "screen was not removed");
+  });
+
+  test("confirms closed screen removal and preserves cancellation", async () => {
+    await reset();
+    const originalConfirm = window.confirm;
+    const screenId = actions.addScreen();
+    await wait();
+    const card = document.querySelector(`[data-screen-id="${screenId}"]`);
+    const remove = card.querySelector(".screen-settings .danger");
+    let prompt = "";
+    try {
+      window.confirm = message => { prompt = message; return false; };
+      remove.click();
+      assert(workspace.screens.some(screen => screen.id === screenId) && prompt.includes("cannot be undone"),
+        "cancelling closed-screen removal lost the screen or omitted the irreversible warning");
+      window.confirm = () => true;
+      remove.click();
+      assert(!workspace.screens.some(screen => screen.id === screenId),
+        "confirming closed-screen removal did not remove the screen");
+    } finally {
+      window.confirm = originalConfirm;
+    }
   });
 
   test("imports atomically and exports only the deck", async () => {
@@ -821,7 +1037,7 @@ export async function runTests(app) {
     await reset();
     const slideId = deck.presentations[0].slides[0].id;
     const transfer = new DataTransfer();
-    const handles = document.querySelectorAll('[aria-label="Drag slide"]');
+    const handles = document.querySelectorAll('[aria-label="Move slide"]');
     assert(handles.length && !editing(), "Operate did not expose slide drag handles");
     handles[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
     const target = document.querySelectorAll(".slide-card")[1];
@@ -840,7 +1056,7 @@ export async function runTests(app) {
     await wait();
     const setId = deck.presentations[0].id;
     const setTransfer = new DataTransfer();
-    document.querySelectorAll('[aria-label="Drag set"]')[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: setTransfer }));
+    document.querySelectorAll('[aria-label="Move set"]')[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: setTransfer }));
     const setTarget = document.querySelectorAll(".presentation")[1];
     const setBox = setTarget.getBoundingClientRect();
     setTarget.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, clientY: setBox.bottom, dataTransfer: setTransfer }));
@@ -915,6 +1131,9 @@ export async function runTests(app) {
       await media.refreshCameras();
       await wait();
       assert(media.cameras().length === 2 && document.querySelectorAll(".source-card").length === 2, "camera cards were not all visible");
+      const hideBox = document.querySelector(".source-hide").getBoundingClientRect();
+      assert(hideBox.width >= 23.9 && hideBox.height >= 23.9,
+        "source hide action was smaller than the compact control target minimum");
       assert(probes[0].track.stopped, "permission probe leaked");
       document.querySelector(".source-select").click();
       assert(media.selected()?.stream === cameras[0]["camera-1"].stream, "camera card did not select its live stream");

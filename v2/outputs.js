@@ -13,6 +13,11 @@ export function createOutputController(host) {
     else delete next[id];
     return next;
   });
+  const loseConnection = (id, target) => {
+    if (targets.get(id) !== target) return;
+    targets.delete(id);
+    setStatus(id, "Output connection was lost. Open it again.");
+  };
   const refresh = () => {
     for (const [id, target] of targets) {
       if (!target || host.isClosed(target)) targets.delete(id);
@@ -23,14 +28,17 @@ export function createOutputController(host) {
     if (!target || host.isClosed(target)) return false;
     return host.send(target, payload);
   };
+  const deliverLatest = (id, target) => {
+    const view = latest.get(id);
+    if (!view || send(target, view)) return true;
+    loseConnection(id, target);
+    refresh();
+    return false;
+  };
   const connect = (target, id) => {
     if (disposed || !latest.has(id)) return false;
     targets.set(id, target);
-    if (!send(target, latest.get(id))) {
-      targets.delete(id);
-      refresh();
-      return false;
-    }
+    if (!deliverLatest(id, target)) return false;
     setStatus(id, "");
     refresh();
     return true;
@@ -52,7 +60,7 @@ export function createOutputController(host) {
     for (const view of viewStates) latest.set(view.screenId, view);
     for (const [id, target] of targets) {
       const view = latest.get(id);
-      if (view && !send(target, view)) targets.delete(id);
+      if (view && !send(target, view)) loseConnection(id, target);
     }
     refresh();
   };
@@ -62,14 +70,7 @@ export function createOutputController(host) {
     const existing = targets.get(screen.id);
     if (existing && !host.isClosed(existing)) {
       host.focus(existing);
-      const view = latest.get(screen.id);
-      if (view && !send(existing, view)) {
-        targets.delete(screen.id);
-        setStatus(screen.id, "Output connection was lost. Open it again.");
-        refresh();
-        return false;
-      }
-      return true;
+      return deliverLatest(screen.id, existing);
     }
     const width = 1280;
     const height = Math.round(width * screen.height / screen.width);

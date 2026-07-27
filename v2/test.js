@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const url = "https://localhost/v2/index.html?test=1";
+const url = process.env.PRESENTLY_TEST_URL ?? "https://localhost/v2/index.html?test=1";
 const solidRuntimeFiles = [
   "dist/solid.js",
   "html/dist/html.js",
@@ -181,8 +181,9 @@ try {
     const deck = document.querySelector(".deck-body");
     const sources = document.querySelector(".sources");
     const outputs = document.querySelector(".outputs");
-    const identity = document.querySelector(".toolbar-identity").getBoundingClientRect();
-    const command = document.querySelector(".toolbar-command").getBoundingClientRect();
+    const primary = document.querySelector(".toolbar-primary").getBoundingClientRect();
+    const secondary = document.querySelector(".toolbar-secondary").getBoundingClientRect();
+    const toolbar = document.querySelector(".toolbar").getBoundingClientRect();
     const sourceTop = sources.getBoundingClientRect().top;
     deck.scrollTop = deck.scrollHeight;
     await new Promise(resolve => requestAnimationFrame(resolve));
@@ -190,13 +191,71 @@ try {
       deckScrolls: deck.scrollHeight > deck.clientHeight && deck.scrollTop > 0,
       sourcesStayPut: Math.abs(sources.getBoundingClientRect().top - sourceTop) < 1,
       screensStayVisible: outputs.getBoundingClientRect().height === innerHeight,
-      twoTierBar: identity.bottom <= command.top + 1,
+      twoTierBar: primary.bottom <= secondary.top + 1 && toolbar.height <= 70,
+      nativeEditSwitch: document.querySelector('[data-test="edit-mode"][role="switch"]')?.type === "checkbox",
+      advancedStartsClosed: [...document.querySelectorAll(".screen-advanced")].every(details => !details.open),
+      noRedundantReadouts: !document.querySelector(".cue-readout, .deck-view-controls, .screen-state"),
+      moveAffordances: document.querySelectorAll(".move-mark").length > 1
+        && getComputedStyle(document.querySelector(".drag-handle")).cursor === "move",
       historyFits: ["undo", "redo"].every(name => document.querySelector(`[data-test="${name}"]`))
         && document.querySelector(".toolbar-actions").scrollWidth <= document.querySelector(".toolbar-actions").clientWidth,
       previewControl: document.querySelector('[aria-label="Slide preview screen"]')?.value === window.presently.queries.workspace().previewScreenId
     };
   });
   console.log(`Live workspace: ${Object.values(workspaceLayout).every(Boolean) ? "fixed deck/source/screens" : "failed"}`);
+
+  const collapsedLiveCue = await page.evaluate(async () => {
+    const { commands, queries } = window.presently;
+    const set = queries.deck().presentations[0];
+    commands.setSetCollapsed(set.id, false);
+    commands.select(set.id, set.slides[0].id);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    commands.setSetCollapsed(set.id, true);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const presentation = document.querySelector(".presentation");
+    const cue = presentation.querySelector(".set-live-cue");
+    const result = !presentation.querySelector(".slide-grid")
+      && cue && !cue.hidden && cue.textContent.includes("LIVE · 01")
+      && queries.selection()?.slideId === set.slides[0].id;
+    commands.setSetCollapsed(set.id, false);
+    return Boolean(result);
+  });
+  console.log(`Collapsed live set: ${collapsedLiveCue ? "visible cue preserved" : "failed"}`);
+
+  const compactControls = await page.evaluate(() => {
+    const selectors = [
+      ".collapse-toggle",
+      ".slide-tools .drag-handle",
+      ".slide-tools .danger",
+      ".set-tools .drag-handle",
+      ".set-tools .danger"
+    ];
+    return selectors.every(selector => {
+      const box = document.querySelector(selector)?.getBoundingClientRect();
+      return box && box.width >= 23.9 && box.height >= 23.9;
+    });
+  });
+  console.log(`Compact controls: ${compactControls ? "24px minimum targets" : "undersized"}`);
+
+  const attributionLayout = await page.evaluate(async () => {
+    const deck = document.querySelector(".deck-body");
+    const presentation = [...document.querySelectorAll(".presentation")].at(-1);
+    const details = presentation.querySelector(".attribution-menu");
+    presentation.scrollIntoView({ block: "end" });
+    details.open = true;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    details.querySelector(".attribution-panel").scrollIntoView({ block: "nearest" });
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const panel = details.querySelector(".attribution-panel");
+    const panelBox = panel.getBoundingClientRect();
+    const deckBox = deck.getBoundingClientRect();
+    const result = getComputedStyle(panel).position === "static"
+      && panelBox.top >= deckBox.top - 1 && panelBox.bottom <= deckBox.bottom + 1
+      && panelBox.left >= deckBox.left - 1 && panelBox.right <= deckBox.right + 1;
+    details.open = false;
+    return result;
+  });
+  console.log(`Attribution disclosure: ${attributionLayout ? "in-flow and reachable" : "clipped"}`);
 
   const aspectResults = {
     widescreen: await verifyAspect(page, screenId, 1920, 1080),
@@ -233,12 +292,12 @@ try {
   await viewer.evaluate(() => dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
   await page.waitForFunction(id => {
     const card = document.querySelector(`[data-screen-id="${id}"]`);
-    return card?.querySelector(".screen-state")?.textContent === "Closed";
+    return !card?.querySelector(".output-open")?.classList.contains("open");
   }, screenId);
   await viewer.evaluate(() => dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
   await page.waitForFunction(id => {
     const card = document.querySelector(`[data-screen-id="${id}"]`);
-    return card?.querySelector(".screen-state")?.textContent === "Open";
+    return card?.querySelector(".output-open")?.classList.contains("open");
   }, screenId);
   const viewerReconnect = true;
   console.log("Viewer lifecycle: pagehide/pageshow disconnect/reconnect");
@@ -250,7 +309,7 @@ try {
     deviceScaleFactor: 2
   });
   const dprPage = await dprContext.newPage();
-  await dprPage.goto("https://localhost/v2/index.html");
+  await dprPage.goto(new URL("index.html", url).href);
   await dprPage.waitForSelector(".slide-card .canvas");
   const dprResult = await dprPage.evaluate(() => {
     const box = document.querySelector(".slide-card .canvas").getBoundingClientRect();
@@ -261,7 +320,18 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await settle(page);
-  const narrowFits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
+  const narrowFits = await page.evaluate(async () => {
+    const primary = document.querySelector(".toolbar-primary").getBoundingClientRect();
+    const secondary = document.querySelector(".toolbar-secondary").getBoundingClientRect();
+    const details = document.querySelector(".attribution-menu");
+    details.open = true;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const fitsOpenDisclosure = document.documentElement.scrollWidth <= innerWidth + 1;
+    details.open = false;
+    return fitsOpenDisclosure
+      && document.documentElement.scrollWidth <= innerWidth + 1
+      && primary.bottom <= secondary.top + 1;
+  });
   console.log(`Narrow viewport: ${narrowFits ? "fits" : "horizontal overflow"}`);
 
   reportCoverage(await page.coverage.stopJSCoverage());
@@ -271,6 +341,9 @@ try {
     Object.values(runtimeGraph).every(Boolean),
     Object.values(columnResults).every(Boolean),
     Object.values(workspaceLayout).every(Boolean),
+    collapsedLiveCue,
+    compactControls,
+    attributionLayout,
     Object.values(aspectResults).every(Boolean),
     viewerWidescreen,
     viewerClassic,
@@ -279,7 +352,7 @@ try {
     narrowFits
   ];
   if (!checks.every(Boolean)) {
-    throw new Error(`${builtInFailures} built-in failures, ${pageErrors.length} page errors; runtime=${JSON.stringify(runtimeGraph)} columns=${JSON.stringify(columnResults)} workspace=${JSON.stringify(workspaceLayout)} aspects=${JSON.stringify(aspectResults)} viewer=${viewerWidescreen}/${viewerClassic}/${viewerReconnect} dpr=${dprResult} narrow=${narrowFits}`);
+    throw new Error(`${builtInFailures} built-in failures, ${pageErrors.length} page errors; runtime=${JSON.stringify(runtimeGraph)} columns=${JSON.stringify(columnResults)} workspace=${JSON.stringify(workspaceLayout)} collapsedLive=${collapsedLiveCue} targets=${compactControls} attribution=${attributionLayout} aspects=${JSON.stringify(aspectResults)} viewer=${viewerWidescreen}/${viewerClassic}/${viewerReconnect} dpr=${dprResult} narrow=${narrowFits}`);
   }
 } catch (error) {
   if (serverLog) console.error(serverLog.trim());

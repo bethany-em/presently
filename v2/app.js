@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { For, Show, batch, createEffect, createSignal, onCleanup } from "solid-js";
 import html from "solid-js/html";
 import { render } from "solid-js/web";
 import { OutputCanvas, Video } from "./canvas.js";
@@ -139,14 +139,14 @@ function App(environment, bootstrap, capture) {
   const [focusedSlideId, setFocusedSlideId] = createSignal(null);
   const [dragged, setDragged] = createSignal(null);
   const [dropMarker, setDropMarker] = createSignal(null);
-  const devices = media.cameras;
-  const displaySource = media.display;
+  const sources = media.sources;
+  const selectedSourceKey = media.selectedKey;
   const source = media.selected;
   const openScreenIds = outputs.openIds;
   let focusRequest = 0;
   let disposed = false;
 
-  const beginDeckChange = label => history.begin(label);
+  const beginDeckChange = history.begin;
   const setWordsEditing = value => {
     if (!value) history.commit();
     setEditing(Boolean(value));
@@ -159,6 +159,11 @@ function App(environment, bootstrap, capture) {
     environment.defer(() => {
       if (!disposed && request === focusRequest) setFocusedSlideId(id);
     });
+  };
+  const clearFocusAfter = change => {
+    const changed = change();
+    if (changed) setFocusedSlideId(null);
+    return changed;
   };
 
   const actions = {
@@ -186,11 +191,15 @@ function App(environment, bootstrap, capture) {
     },
     movePresentation: controller.deck.movePresentation,
     addSlide: presentationId => {
-      const id = controller.deck.addSlide(presentationId);
-      if (id) {
-        setWordsEditing(true);
-        focusSlide(id);
-      }
+      let id;
+      batch(() => {
+        controller.workspace.setSetCollapsed(presentationId, false);
+        id = controller.deck.addSlide(presentationId);
+        if (id) {
+          setWordsEditing(true);
+          focusSlide(id);
+        }
+      });
       return id;
     },
     removeSlide: (presentationId, slideId) => {
@@ -204,17 +213,10 @@ function App(environment, bootstrap, capture) {
       if (ids[0]) focusSlide(ids[0]);
       return ids;
     },
-    replaceDeck: input => {
-      const changed = controller.deck.replace(input);
-      if (changed) setFocusedSlideId(null);
-      return changed;
-    },
-    resetDeck: () => {
-      const changed = controller.deck.reset();
-      if (changed) setFocusedSlideId(null);
-      return changed;
-    },
+    replaceDeck: input => clearFocusAfter(() => controller.deck.replace(input)),
+    resetDeck: () => clearFocusAfter(controller.deck.reset),
     exportDeck: () => environment.download(controller.deck.exportPayload()),
+    setSetCollapsed: controller.workspace.setSetCollapsed,
     addScreen: controller.workspace.addScreen,
     removeScreen: id => {
       outputs.retire(id);
@@ -228,16 +230,8 @@ function App(environment, bootstrap, capture) {
     screenTextRows: controller.workspace.setTextRows,
     slideColumns: controller.workspace.setSlideColumns,
     previewScreen: controller.workspace.setPreviewScreen,
-    undo: () => {
-      const changed = history.undo();
-      if (changed) setFocusedSlideId(null);
-      return changed;
-    },
-    redo: () => {
-      const changed = history.redo();
-      if (changed) setFocusedSlideId(null);
-      return changed;
-    },
+    undo: () => clearFocusAfter(history.undo),
+    redo: () => clearFocusAfter(history.redo),
   };
 
   const canDrop = target => {
@@ -296,6 +290,14 @@ function App(environment, bootstrap, capture) {
     return html`<${Show} when=${() => props.text}><p class="notice" role="status">${() => props.text}</p><//>`;
   }
 
+  function MoveMark() {
+    return html`
+      <svg class="move-mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M8 1v14M1 8h14M8 1 5.5 3.5M8 1l2.5 2.5M15 8l-2.5-2.5M15 8l-2.5 2.5M8 15l-2.5-2.5M8 15l2.5-2.5M1 8l2.5-2.5M1 8l2.5 2.5"></path>
+      </svg>
+    `;
+  }
+
   function SlideCard(props) {
     const [overflow, setOverflow] = createSignal(false);
     const isSelected = () => selected()?.slideId === props.slide.id;
@@ -326,13 +328,10 @@ function App(environment, bootstrap, capture) {
       toggleCue();
     };
     const toggleEditing = () => {
+      const next = !editing();
       actions.select(props.presentation.id, props.slide.id);
-      if (editing()) {
-        actions.editing(false);
-      } else {
-        actions.editing(true);
-        focusSlide(props.slide.id);
-      }
+      actions.editing(next);
+      if (next) focusSlide(props.slide.id);
     };
     const keydown = event => {
       if (editing() || !["Enter", " "].includes(event.key)) return;
@@ -377,7 +376,11 @@ function App(environment, bootstrap, capture) {
             }} />
         </div>
         <div class="slide-caption" style=${() => ({ background: tagColor(props.slide.title) })}>
-          <span class="slide-number">${() => String(props.index + 1).padStart(2, "0")}</span>
+          <span class="slide-number">
+            ${() => isSelected()
+              ? `LIVE · ${String(props.index + 1).padStart(2, "0")}`
+              : String(props.index + 1).padStart(2, "0")}
+          </span>
           <input aria-label="Slide label"
             list="slide-labels"
             value=${() => props.slide.title}
@@ -389,10 +392,10 @@ function App(environment, bootstrap, capture) {
           <span class="overflow-warning">Text exceeds safe area</span>
         <//>
         <span class="slide-tools">
-          <button class="drag-handle" draggable="true" aria-label="Drag slide"
+          <button class="drag-handle quiet-action" draggable="true" aria-label="Move slide"
             onDragStart=${event => beginDrag(event, { type: "slide", id: props.slide.id, presentationId: props.presentation.id })}
-            onDragEnd=${clearDrag}>↕</button>
-          <button class="danger" aria-label="Remove slide"
+            onDragEnd=${clearDrag}><${MoveMark} /></button>
+          <button class="danger quiet-action" aria-label="Remove slide"
             onClick=${() => actions.removeSlide(props.presentation.id, props.slide.id)}>×</button>
         </span>
       </article>
@@ -400,11 +403,19 @@ function App(environment, bootstrap, capture) {
   }
 
   function Presentation(props) {
-    const [collapsed, setCollapsed] = createSignal(false);
+    const collapsed = () => controller.workspace.isSetCollapsed(props.presentation.id);
+    const collapsedLiveLabel = () => {
+      if (!collapsed()) return "";
+      const entry = liveEntry();
+      if (entry?.presentation.id !== props.presentation.id) return "";
+      const index = props.presentation.slides.findIndex(slide => slide.id === entry.slide.id);
+      return index < 0 ? "" : `LIVE · ${String(index + 1).padStart(2, "0")}`;
+    };
     const dropState = () => dropMarker()?.id === props.presentation.id ? dropMarker()?.side : "";
+    const setCollapsed = value => actions.setSetCollapsed(props.presentation.id, value);
     const toggleCollapsed = event => {
-      if (event?.target.closest?.("input, button, textarea, select, summary")) return;
-      setCollapsed(value => !value);
+      if (event?.target.closest?.("input, button, textarea, select, details, summary")) return;
+      setCollapsed(!collapsed());
     };
     const remove = () => {
       if (environment.confirm(`Remove “${props.presentation.title}” and all of its slides?`)) {
@@ -422,21 +433,39 @@ function App(environment, bootstrap, capture) {
         onDrop=${event => drop(event, { type: "presentation", id: props.presentation.id })}>
         <header class="presentation-head" onClick=${toggleCollapsed}>
           <div class="presentation-name">
-            <button class="collapse-toggle" aria-label=${() => `${collapsed() ? "Expand" : "Collapse"} ${props.presentation.title}`}
+            <button class="collapse-toggle quiet-action" aria-label=${() => `${collapsed() ? "Expand" : "Collapse"} ${props.presentation.title}`}
               aria-expanded=${() => !collapsed()}
-              onClick=${event => { event.stopPropagation(); setCollapsed(value => !value); }}>${() => collapsed() ? "▸" : "▾"}</button>
+              onClick=${event => { event.stopPropagation(); setCollapsed(!collapsed()); }}>${() => collapsed() ? "▸" : "▾"}</button>
             <input class="presentation-title" aria-label="Set title"
               value=${() => props.presentation.title}
               onFocus=${event => beginDeckChange("Edit set title")}
               onBlur=${event => history.commit()}
               onInput=${event => actions.presentationTitle(props.presentation.id, event.currentTarget.value)}>
-            <span class="meta">${() => `${props.presentation.slides.length} slide${props.presentation.slides.length === 1 ? "" : "s"}`}</span>
+            <span class="set-live-cue" hidden=${() => !collapsedLiveLabel()}>
+              ${collapsedLiveLabel}
+            </span>
           </div>
-          <div class="set-tools">
-            <button class="drag-handle" draggable="true" aria-label="Drag set"
-              onDragStart=${event => beginDrag(event, { type: "presentation", id: props.presentation.id })}
-              onDragEnd=${clearDrag}>↕</button>
-            <button class="danger" aria-label="Remove set" onClick=${remove}>×</button>
+          <div class="presentation-actions">
+            <button class="set-add quiet-action" onClick=${() => actions.addSlide(props.presentation.id)}>Add slide</button>
+            <details class="attribution-menu">
+              <summary class="quiet-action">Attribution</summary>
+              <div class="menu-panel attribution-panel">
+                <label>
+                  <span>Set attribution</span>
+                  <textarea aria-label="Set attribution" placeholder="Attribution"
+                    value=${() => props.presentation.attribution}
+                    onFocus=${event => beginDeckChange("Edit attribution")}
+                    onBlur=${event => history.commit()}
+                    onInput=${event => actions.presentationAttribution(props.presentation.id, event.currentTarget.value)}></textarea>
+                </label>
+              </div>
+            </details>
+            <span class="set-tools">
+              <button class="drag-handle quiet-action" draggable="true" aria-label="Move set"
+                onDragStart=${event => beginDrag(event, { type: "presentation", id: props.presentation.id })}
+                onDragEnd=${clearDrag}><${MoveMark} /></button>
+              <button class="danger quiet-action" aria-label="Remove set" onClick=${remove}>×</button>
+            </span>
           </div>
         </header>
         <${Show} when=${() => !collapsed()}>
@@ -449,13 +478,7 @@ function App(environment, bootstrap, capture) {
                   presentation=${() => props.presentation} />
               `}
             <//>
-            <button class="add-slide" onClick=${() => actions.addSlide(props.presentation.id)}>Add slide</button>
           </div>
-          <textarea class="attribution-field" aria-label="Set attribution" placeholder="Attribution"
-            value=${() => props.presentation.attribution}
-            onFocus=${event => beginDeckChange("Edit attribution")}
-            onBlur=${event => history.commit()}
-            onInput=${event => actions.presentationAttribution(props.presentation.id, event.currentTarget.value)}></textarea>
         <//>
       </section>
     `;
@@ -491,45 +514,67 @@ function App(environment, bootstrap, capture) {
     return html`
       <section class="deck-panel" aria-label="Deck">
         <header class="toolbar">
-          <div class="toolbar-identity">
+          <div class="toolbar-primary">
             <input class="deck-title" aria-label="Deck title"
               value=${() => deck.title}
               onFocus=${event => beginDeckChange("Edit deck title")}
               onBlur=${event => history.commit()}
               onInput=${event => actions.deckTitle(event.currentTarget.value)}>
-            <div class="cue-readout" classList=${() => ({ live: Boolean(liveEntry()) })}>
-              <span>Live cue</span><strong>${cueLabel}</strong>
-            </div>
-          </div>
-          <div class="toolbar-command">
-            <label class="edit-switch">
-              <input data-test="edit-mode" type="checkbox" checked=${editing}
-                onChange=${event => actions.editing(event.currentTarget.checked)}>
-              <span>${() => editing() ? "Edit words" : "Operate"}</span>
-            </label>
             <div class="toolbar-actions">
-              <button data-test="undo" disabled=${() => !history.canUndo()}
+              <button class="quiet-action" data-test="undo" disabled=${() => !history.canUndo()}
                 title=${() => history.undoLabel() ? `Undo ${history.undoLabel()} (Ctrl+Z)` : "Nothing to undo"}
                 aria-keyshortcuts="Control+Z Meta+Z"
                 onClick=${event => actions.undo()}>Undo</button>
-              <button data-test="redo" disabled=${() => !history.canRedo()}
+              <button class="quiet-action" data-test="redo" disabled=${() => !history.canRedo()}
                 title=${() => history.redoLabel() ? `Redo ${history.redoLabel()} (Ctrl+Shift+Z)` : "Nothing to redo"}
                 aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
                 onClick=${event => actions.redo()}>Redo</button>
-              <button data-test="add-set" onClick=${() => actions.addPresentation()}>Add set</button>
+              <button class="quiet-action" data-test="add-set" onClick=${() => actions.addPresentation()}>Add set</button>
               <details class="document-menu">
-                <summary>Deck</summary>
+                <summary class="quiet-action">Deck</summary>
                 <div class="menu-panel">
-                  <button onClick=${() => fileInput.click()}>Import</button>
-                  <button onClick=${event => actions.exportDeck(event)}>Export</button>
-                  <button class="danger" onClick=${reset}>Reset tutorial</button>
+                  <button class="quiet-action" onClick=${() => fileInput.click()}>Import</button>
+                  <button class="quiet-action" onClick=${event => actions.exportDeck(event)}>Export</button>
+                  <button class="danger quiet-action" onClick=${reset}>Reset tutorial</button>
                 </div>
               </details>
               <input ref=${node => fileInput = node} class="file-input" type="file"
                 accept="application/json" onChange=${importDeck}>
             </div>
           </div>
+          <div class="toolbar-secondary">
+            <label class="edit-switch">
+              <span>Edit words</span>
+              <input data-test="edit-mode" type="checkbox" role="switch" checked=${editing}
+                onChange=${event => actions.editing(event.currentTarget.checked)}>
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
+            <details class="view-menu">
+              <summary class="quiet-action">View</summary>
+              <div class="menu-panel view-settings">
+                <label class="preview-control">
+                  <span>Preview profile</span>
+                  <select aria-label="Slide preview screen" value=${() => workspace.previewScreenId ?? ""}
+                    disabled=${() => !workspace.screens.length}
+                    onChange=${event => actions.previewScreen(event.currentTarget.value)}>
+                    <${For} each=${() => workspace.screens}>
+                      ${screen => html`<option value=${screen.id}>${() => screen.label}</option>`}
+                    <//>
+                  </select>
+                </label>
+                <label class="column-control">
+                  <span>Thumbnail size</span>
+                  <input aria-label="Slides per row" type="range" min="2" max="10" step="1"
+                    value=${() => workspace.slideColumns}
+                    aria-valuetext=${() => `${workspace.slideColumns} columns`}
+                    onInput=${event => actions.slideColumns(event.currentTarget.value)}>
+                  <small><span>Large</span><span>Small</span></small>
+                </label>
+              </div>
+            </details>
+          </div>
         </header>
+        <span class="sr-only" role="status">${() => cueLabel()}</span>
         <${Notice} text=${controller.deck.status} />
         <div class="deck-body" style=${() => ({ "--slide-columns": workspace.slideColumns })}>
           <${For} each=${() => deck.presentations}>
@@ -542,24 +587,6 @@ function App(environment, bootstrap, capture) {
         <datalist id="slide-labels">
           <${For} each=${slideLabels}>${label => html`<option value=${label}></option>`}<//>
         </datalist>
-        <div class="deck-view-controls">
-          <label class="preview-control">
-            <span>Slide preview</span>
-            <select aria-label="Slide preview screen" value=${() => workspace.previewScreenId ?? ""}
-              disabled=${() => !workspace.screens.length}
-              onChange=${event => actions.previewScreen(event.currentTarget.value)}>
-              <${For} each=${() => workspace.screens}>
-                ${screen => html`<option value=${screen.id}>${() => screen.label}</option>`}
-              <//>
-            </select>
-          </label>
-          <label class="column-control">
-            <span>${() => `${workspace.slideColumns} per row`}</span>
-            <input aria-label="Slides per row" type="range" min="2" max="10" step="1"
-              value=${() => workspace.slideColumns}
-              onInput=${event => actions.slideColumns(event.currentTarget.value)}>
-          </label>
-        </div>
       </section>
     `;
   }
@@ -569,7 +596,7 @@ function App(environment, bootstrap, capture) {
   function CompositionControls(props) {
     const bank = () => activePositionBank(props.screen);
     const position = () => props.screen.textPositions[bank()];
-    const context = () => bank() === "withVideo" ? "With video" : "No video";
+    const context = () => bank() === "withVideo" ? "Video layout" : "Words-only layout";
 
     return html`
       <div class="composition-controls">
@@ -611,25 +638,25 @@ function App(environment, bootstrap, capture) {
     const screenSource = () => props.screen.videoMode === "off" ? null : source();
     const isOpen = () => openScreenIds().includes(props.screen.id);
     const remove = () => {
-      if (isOpen() && !environment.confirm(`Close and remove the ${props.screen.label} screen?`)) return;
+      if (!environment.confirm(`Remove the ${props.screen.label} screen? This cannot be undone.`)) return;
       actions.removeScreen(props.screen.id);
     };
 
     return html`
       <section class="output-card" data-screen-id=${props.screen.id}>
         <header class="output-bar">
-          <div class="screen-name">
+          <div class="output-row output-identity">
             <input class="screen-label" aria-label="Screen label"
               value=${() => props.screen.label}
               onInput=${event => actions.renameScreen(props.screen.id, event.currentTarget.value)}>
-            <span class="screen-state" classList=${() => ({ open: isOpen() })}>
-              ${() => isOpen() ? "Open" : "Closed"}
-            </span>
+            <button class="output-open quiet-action" data-test="open-output"
+              classList=${() => ({ open: isOpen() })}
+              aria-label=${() => isOpen() ? `${props.screen.label} output open` : `Open ${props.screen.label} output`}
+              onClick=${() => outputs.open(props.screen)}>${() => isOpen() ? "Open ✓" : "Open"}</button>
           </div>
-          <div class="output-actions">
-            <button data-test="open-output" onClick=${() => outputs.open(props.screen)}>Open</button>
-            <label>
-              <span class="sr-only">Video mode</span>
+          <div class="output-row output-video">
+            <label class="video-control">
+              <span>Video</span>
               <select aria-label="Video mode" value=${() => props.screen.videoMode}
                 onChange=${event => actions.screenVideoMode(props.screen.id, event.currentTarget.value)}>
                 <option value="off">Off</option>
@@ -637,16 +664,6 @@ function App(environment, bootstrap, capture) {
                 <option value="contain">Contain</option>
               </select>
             </label>
-            <details class="screen-menu">
-              <summary>Screen</summary>
-              <div class="menu-panel screen-settings">
-                <label>Width <input type="number" min="1" value=${() => props.screen.width}
-                  onChange=${event => actions.screenWidth(props.screen.id, event.currentTarget.value)}></label>
-                <label>Height <input type="number" min="1" value=${() => props.screen.height}
-                  onChange=${event => actions.screenHeight(props.screen.id, event.currentTarget.value)}></label>
-                <button class="danger" onClick=${remove}>Remove screen</button>
-              </div>
-            </details>
           </div>
         </header>
         <${OutputCanvas}
@@ -654,49 +671,60 @@ function App(environment, bootstrap, capture) {
           source=${screenSource}
           measureOverflow=${() => true}
           onOverflow=${value => setOverflow(value)} />
-        <${CompositionControls}
-          screen=${() => props.screen}
-          onPosition=${(position, bank) => actions.screenTextPosition(props.screen.id, bank, position)}
-          onRows=${rows => actions.screenTextRows(props.screen.id, rows)} />
-        <${Show} when=${overflow}>
-          <p class="overflow-warning">Selected text exceeds this screen’s safe area.</p>
-        <//>
+        <details class="screen-advanced" name="screen-advanced">
+          <summary>
+            <span>Advanced options</span>
+            <${Show} when=${overflow}><span class="advanced-warning">Text overflow</span><//>
+          </summary>
+          <div class="screen-advanced-panel">
+            <${CompositionControls}
+              screen=${() => props.screen}
+              onPosition=${(position, bank) => actions.screenTextPosition(props.screen.id, bank, position)}
+              onRows=${rows => actions.screenTextRows(props.screen.id, rows)} />
+            <div class="screen-settings">
+              <label>Width <input aria-label="Screen width" type="number" min="1" value=${() => props.screen.width}
+                onChange=${event => actions.screenWidth(props.screen.id, event.currentTarget.value)}></label>
+              <label>Height <input aria-label="Screen height" type="number" min="1" value=${() => props.screen.height}
+                onChange=${event => actions.screenHeight(props.screen.id, event.currentTarget.value)}></label>
+              <button class="danger quiet-action" onClick=${remove}>Remove screen</button>
+            </div>
+          </div>
+        </details>
         <${Notice} text=${() => outputs.statusFor(props.screen.id)} />
       </section>
     `;
   }
 
   function SourcePanel() {
-    const sources = () => displaySource() ? [displaySource(), ...devices()] : devices();
-
     return html`
       <section class="sources" aria-label="Video sources">
-        <header class="panel-head">
-          <div>
-            <h2>Video sources</h2>
-            <p>${() => source()?.label ?? "No active source"}</p>
-          </div>
+        <header class="panel-head source-head">
+          <h2>Sources</h2>
+          <span class="source-status">${() => source()?.label ?? "None selected"}</span>
           <div class="source-actions">
-            <button onClick=${media.shareDisplay}>Share display</button>
-            <button data-test="find-cameras" onClick=${media.refreshCameras}>Refresh</button>
+            <button class="quiet-action" onClick=${media.shareDisplay}>Share display</button>
+            <button class="quiet-action" data-test="find-cameras" onClick=${media.refreshCameras}>Refresh</button>
           </div>
         </header>
         <${Notice} text=${media.status} />
         <div class="source-list">
           <${For} each=${sources} fallback=${html`<p class="source-empty">No cameras visible. Refresh to try again.</p>`}>
-            ${item => html`
-              <article class="source-card" classList=${() => ({ active: source()?.stream === item.stream })}>
-                <button class="source-select"
-                  aria-pressed=${() => source()?.stream === item.stream}
-                  aria-label=${() => `${source()?.stream === item.stream ? "Stop using" : "Use"} ${item.label}`}
-                  onClick=${() => media.toggleSource(item.key)}>
-                  <span class="source-frame"><${Video} source=${() => item} /></span>
-                  <span>${() => item.label}</span>
-                </button>
-                <button class="source-hide" aria-label=${() => `Hide ${item.label}`}
-                  onClick=${() => media.hideSource(item.key)}>×</button>
-              </article>
-            `}
+            ${item => {
+              const active = () => selectedSourceKey() === item.key;
+              return html`
+                <article class="source-card" classList=${() => ({ active: active() })}>
+                  <button class="source-select"
+                    aria-pressed=${active}
+                    aria-label=${() => `${active() ? "Stop using" : "Use"} ${item.label}`}
+                    onClick=${() => media.toggleSource(item.key)}>
+                    <span class="source-frame"><${Video} source=${() => item} /></span>
+                    <span>${() => item.label}</span>
+                  </button>
+                  <button class="source-hide" aria-label=${() => `Hide ${item.label}`}
+                    onClick=${() => media.hideSource(item.key)}>×</button>
+                </article>
+              `;
+            }}
           <//>
         </div>
       </section>
@@ -768,11 +796,8 @@ function App(environment, bootstrap, capture) {
       </main>
       <aside class="outputs" aria-label="Screens">
         <header class="output-head">
-          <div>
-            <h2>Screens</h2>
-            <p>Truthful previews of every destination</p>
-          </div>
-          <button onClick=${() => actions.addScreen()}>Add screen</button>
+          <h2>Screens</h2>
+          <button class="quiet-action" onClick=${() => actions.addScreen()}>Add screen</button>
         </header>
         <${Notice} text=${controller.workspace.status} />
         <div class="output-grid">

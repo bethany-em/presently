@@ -2,13 +2,21 @@ import { batch, createMemo, createSignal, onCleanup } from "solid-js";
 
 export const stopStream = stream => stream?.getTracks().forEach(track => track.stop());
 
-const previewConstraints = deviceId => ({
-  video: deviceId ? {
-    deviceId: { exact: deviceId },
+const trackConstraints = {
+  preview: {
     width: { ideal: 640 },
     height: { ideal: 360 },
     frameRate: { ideal: 15 }
-  } : true,
+  },
+  program: {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30 }
+  }
+};
+
+const previewConstraints = deviceId => ({
+  video: deviceId ? { deviceId: { exact: deviceId }, ...trackConstraints.preview } : true,
   audio: false
 });
 
@@ -21,6 +29,8 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
   const [status, setStatus] = createSignal("");
   const pending = new Set();
   const endedStreams = new WeakSet();
+  const qualityModes = new WeakMap();
+  const tuningTracks = new WeakSet();
   let cameraEpoch = 0;
   let sourceEpoch = 0;
   let disposed = false;
@@ -28,6 +38,42 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
 
   const sources = createMemo(() => display() ? [display(), ...cameras()] : cameras());
   const selected = createMemo(() => sources().find(source => source.key === selectedKey()) ?? null);
+  const hasCamera = record => record?.kind === "camera"
+    && cameras().some(camera => camera.stream === record.stream);
+  const tuneCamera = (record, mode) => {
+    if (!hasCamera(record)) return;
+    const track = record.stream.getVideoTracks?.()[0];
+    if (!track?.applyConstraints || qualityModes.get(track) === mode) return;
+    qualityModes.set(track, mode);
+    if (tuningTracks.has(track)) return;
+    tuningTracks.add(track);
+    void (async () => {
+      while (!disposed && hasCamera(record)) {
+        const requested = qualityModes.get(track);
+        try {
+          await track.applyConstraints(trackConstraints[requested]);
+        } catch (error) {
+          if (!disposed && hasCamera(record) && selectedKey() === record.key && requested === "program") {
+            setStatus(`High-quality camera unavailable; using preview quality: ${errorMessage(error)}`);
+          }
+        }
+        if (qualityModes.get(track) === requested) break;
+      }
+      tuningTracks.delete(track);
+    })();
+  };
+  const retuneSelection = (previous, next) => {
+    if (previous?.kind === "camera" && previous.stream !== next?.stream) tuneCamera(previous, "preview");
+    if (next?.kind === "camera") tuneCamera(next, "program");
+  };
+  const selectSource = key => {
+    const previous = selected();
+    batch(() => {
+      setSelectedKey(key);
+      setStatus("");
+    });
+    retuneSelection(previous, selected());
+  };
   const stopPending = stream => {
     pending.delete(stream);
     stopStream(stream);
@@ -49,7 +95,7 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
       ? display()?.stream === record.stream
       : cameras().some(camera => camera.stream === record.stream);
     if (!current) return false;
-    const wasSelected = selected()?.stream === record.stream;
+    const wasSelected = selectedKey() === record.key;
     batch(() => {
       if (record.kind === "display") setDisplay(null);
       else setCameras(items => items.filter(item => item.stream !== record.stream));
@@ -122,6 +168,7 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
       }
 
       const previous = cameras();
+      const previousSelection = selected();
       next.forEach(item => adopt(item.stream));
       batch(() => {
         setCameras(next);
@@ -130,6 +177,7 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
           ? (failures ? `${failures} camera${failures === 1 ? "" : "s"} unavailable.` : "")
           : "No cameras found.");
       });
+      retuneSelection(previousSelection, selected());
       previous
         .filter(item => !next.some(nextItem => nextItem.stream === item.stream))
         .forEach(item => stopStream(item.stream));
@@ -158,6 +206,7 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
         return false;
       }
       const next = { key: "display", kind: "display", label: "Shared display", stream };
+      const previousSelection = selected();
       const previous = display();
       adopt(stream);
       batch(() => {
@@ -165,6 +214,7 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
         setSelectedKey(next.key);
         setStatus("");
       });
+      retuneSelection(previousSelection, selected());
       watch(next);
       if (previous?.stream !== stream) stopStream(previous?.stream);
       return true;
@@ -177,20 +227,15 @@ export function createMediaController({ mediaDevices, defer = queueMicrotask }) 
 
   const toggleSource = key => {
     if (disposed || !sources().some(source => source.key === key)) return false;
+    const next = selectedKey() === key ? null : key;
     sourceEpoch++;
-    batch(() => {
-      setSelectedKey(current => current === key ? null : key);
-      setStatus("");
-    });
+    selectSource(next);
     return true;
   };
 
   const clearSelection = () => {
     sourceEpoch++;
-    batch(() => {
-      setSelectedKey(null);
-      setStatus("");
-    });
+    selectSource(null);
   };
 
   const hideSource = key => {

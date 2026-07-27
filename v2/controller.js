@@ -12,6 +12,7 @@ import {
   moveById,
   normalizeDeck,
   normalizeWorkspace,
+  reconcileCollapsedSetIds,
   sampleDeck,
   selectedEntry
 } from "./model.js";
@@ -44,16 +45,23 @@ export function hydrateController({ storage, storageKeys, newId, includeLegacy =
     workspace = normalizeWorkspace(null, newId);
   }
 
+  const hydratedDeck = deck ?? sampleDeck(newId);
   return {
-    deck: deck ?? sampleDeck(newId),
-    workspace,
+    deck: hydratedDeck,
+    workspace: {
+      ...workspace,
+      collapsedSetIds: reconcileCollapsedSetIds(hydratedDeck, workspace.collapsedSetIds)
+    },
     notice
   };
 }
 
 export function createController({ initialDeck, initialWorkspace, storage, storageKeys, newId, initialNotice = "" }) {
-  const [deckState, setDeck] = createStore(normalizeDeck(initialDeck, newId));
-  const [workspaceState, setWorkspace] = createStore(normalizeWorkspace(initialWorkspace, newId));
+  const normalizedDeck = normalizeDeck(initialDeck, newId);
+  const normalizedWorkspace = normalizeWorkspace(initialWorkspace, newId);
+  normalizedWorkspace.collapsedSetIds = reconcileCollapsedSetIds(normalizedDeck, normalizedWorkspace.collapsedSetIds);
+  const [deckState, setDeck] = createStore(normalizedDeck);
+  const [workspaceState, setWorkspace] = createStore(normalizedWorkspace);
   const [selection, setSelection] = createSignal(null);
   const [deckStatus, setDeckStatus] = createSignal(initialNotice);
   const [workspaceStatus, setWorkspaceStatus] = createSignal("");
@@ -67,6 +75,7 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
     const next = normalizeDeck(value, newId);
     batch(() => {
       setDeck(reconcile(next));
+      setWorkspace("collapsedSetIds", ids => reconcileCollapsedSetIds(next, ids));
       if (!cueExists(next, selection())) setSelection(null);
     });
   };
@@ -125,11 +134,10 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
     removePresentation: id => history.run("Remove set", () => {
       const exists = deckState.presentations.some(presentation => presentation.id === id);
       if (!exists) return false;
-      const clearsCue = deckState.presentations.some(presentation =>
-        presentation.id === id && presentation.slides.some(slide => slide.id === selection()?.slideId)
-      );
+      const clearsCue = selection()?.presentationId === id;
       batch(() => {
         setDeck("presentations", items => items.filter(item => item.id !== id));
+        setWorkspace("collapsedSetIds", items => items.filter(item => item !== id));
         if (clearsCue) setSelection(null);
       });
       return true;
@@ -187,6 +195,7 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
       return history.run(label, () => {
         batch(() => {
           setDeck(reconcile(normalized));
+          setWorkspace("collapsedSetIds", ids => reconcileCollapsedSetIds(normalized, ids));
           setSelection(null);
           setDeckStatus(message);
         });
@@ -204,6 +213,18 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
     state: workspaceState,
     status: workspaceStatus,
     referenceScreen,
+    isSetCollapsed: id => workspaceState.collapsedSetIds.includes(id),
+    setSetCollapsed: (id, collapsed) => {
+      if (!deckState.presentations.some(presentation => presentation.id === id)) return false;
+      const isCollapsed = workspaceState.collapsedSetIds.includes(id);
+      const next = Boolean(collapsed);
+      if (isCollapsed === next) return false;
+      setWorkspace("collapsedSetIds", ids => next
+        ? [...ids, id]
+        : ids.filter(item => item !== id)
+      );
+      return true;
+    },
     addScreen: () => {
       const screen = createScreen(newId, `Screen ${workspaceState.screens.length + 1}`, referenceScreen() ?? DEFAULT_SCREEN_SIZE);
       batch(() => {
