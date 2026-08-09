@@ -225,6 +225,7 @@ function App(environment, bootstrap, capture) {
     renameScreen: controller.workspace.renameScreen,
     screenWidth: controller.workspace.setScreenWidth,
     screenHeight: controller.workspace.setScreenHeight,
+    screenVideoEnabled: controller.workspace.setVideoEnabled,
     screenVideoMode: controller.workspace.setVideoMode,
     screenTextPosition: controller.workspace.setTextPosition,
     screenTextRows: controller.workspace.setTextRows,
@@ -275,7 +276,7 @@ function App(environment, bootstrap, capture) {
     screenId: screen.id,
     label: screen.label,
     composition: structuredClone(resolveScreenComposition(screen, liveEntry())),
-    source: screen.videoMode === "off" ? null : source()
+    source: screen.videoEnabled ? source() : null
   })));
   createEffect(publishOutputs);
   addEventListener("pageshow", publishOutputs);
@@ -300,7 +301,7 @@ function App(environment, bootstrap, capture) {
 
   function EditModeSwitch(props) {
     return html`
-      <label class="edit-switch">
+      <label class="switch-control edit-switch">
         <span>Edit mode</span>
         <input data-test=${props.primary ? "edit-mode" : undefined}
           type="checkbox" role="switch" checked=${editing}
@@ -422,7 +423,7 @@ function App(environment, bootstrap, capture) {
     const dropState = () => dropMarker()?.id === props.presentation.id ? dropMarker()?.side : "";
     const setCollapsed = value => actions.setSetCollapsed(props.presentation.id, value);
     const toggleCollapsed = event => {
-      if (event?.target.closest?.("input, button, textarea, select, details, summary")) return;
+      if (event?.target.closest?.("input, button")) return;
       setCollapsed(!collapsed());
     };
     const remove = () => {
@@ -439,8 +440,8 @@ function App(environment, bootstrap, capture) {
         })}
         onDragOver=${event => allowDrop(event, { type: "presentation", id: props.presentation.id })}
         onDrop=${event => drop(event, { type: "presentation", id: props.presentation.id })}>
-        <header class="presentation-head" onClick=${toggleCollapsed}>
-          <div class="presentation-name">
+        <header class="presentation-head">
+          <div class="presentation-name" onClick=${toggleCollapsed}>
             <button class="collapse-toggle quiet-action" aria-label=${() => `${collapsed() ? "Expand" : "Collapse"} ${props.presentation.title}`}
               aria-expanded=${() => !collapsed()}
               onClick=${event => { event.stopPropagation(); setCollapsed(!collapsed()); }}>${() => collapsed() ? "▸" : "▾"}</button>
@@ -523,18 +524,30 @@ function App(environment, bootstrap, capture) {
             onBlur=${event => history.commit()}
             onInput=${event => actions.deckTitle(event.currentTarget.value)}>
           <div class="toolbar-actions">
-            <button class="quiet-action" data-test="undo" disabled=${() => !history.canUndo()}
+            <button class="quiet-action" data-test="undo" aria-label="Undo" disabled=${() => !history.canUndo()}
               title=${() => history.undoLabel() ? `Undo ${history.undoLabel()} (Ctrl+Z)` : "Nothing to undo"}
               aria-keyshortcuts="Control+Z Meta+Z"
-              onClick=${event => actions.undo()}>Undo</button>
-            <button class="quiet-action" data-test="redo" disabled=${() => !history.canRedo()}
+              onClick=${() => actions.undo()}>
+              <span class="toolbar-icon" aria-hidden="true">↶</span><span class="toolbar-label">Undo</span>
+            </button>
+            <button class="quiet-action" data-test="redo" aria-label="Redo" disabled=${() => !history.canRedo()}
               title=${() => history.redoLabel() ? `Redo ${history.redoLabel()} (Ctrl+Shift+Z)` : "Nothing to redo"}
               aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
-              onClick=${event => actions.redo()}>Redo</button>
-            <button class="quiet-action" data-test="add-set" onClick=${() => actions.addPresentation()}>Add set</button>
-            <button class="quiet-action" onClick=${() => fileInput.click()}>Import</button>
-            <button class="quiet-action" onClick=${event => actions.exportDeck(event)}>Export</button>
-            <button class="danger quiet-action" onClick=${reset}>Reset</button>
+              onClick=${() => actions.redo()}>
+              <span class="toolbar-icon" aria-hidden="true">↷</span><span class="toolbar-label">Redo</span>
+            </button>
+            <button class="quiet-action" data-test="add-set" aria-label="Add set" onClick=${() => actions.addPresentation()}>
+              <span class="toolbar-icon" aria-hidden="true">＋</span><span class="toolbar-label">Add set</span>
+            </button>
+            <button class="quiet-action" aria-label="Import" onClick=${() => fileInput.click()}>
+              <span class="toolbar-icon" aria-hidden="true">↥</span><span class="toolbar-label">Import</span>
+            </button>
+            <button class="quiet-action" aria-label="Export" onClick=${event => actions.exportDeck(event)}>
+              <span class="toolbar-icon" aria-hidden="true">↧</span><span class="toolbar-label">Export</span>
+            </button>
+            <button class="danger quiet-action" aria-label="Reset" onClick=${reset}>
+              <span class="toolbar-icon" aria-hidden="true">↻</span><span class="toolbar-label">Reset</span>
+            </button>
             <input ref=${node => fileInput = node} class="file-input" type="file"
               accept="application/json" onChange=${importDeck}>
             <${EditModeSwitch} primary=${true} />
@@ -623,7 +636,7 @@ function App(environment, bootstrap, capture) {
   function OutputCard(props) {
     const [overflow, setOverflow] = createSignal(false);
     const composition = () => resolveScreenComposition(props.screen, liveEntry());
-    const screenSource = () => props.screen.videoMode === "off" ? null : source();
+    const screenSource = () => props.screen.videoEnabled ? source() : null;
     const isOpen = () => openScreenIds().includes(props.screen.id);
     const remove = () => {
       if (!environment.confirm(`Remove the ${props.screen.label} screen? This cannot be undone.`)) return;
@@ -640,14 +653,12 @@ function App(environment, bootstrap, capture) {
             classList=${() => ({ open: isOpen() })}
             aria-label=${() => isOpen() ? `${props.screen.label} output open` : `Open ${props.screen.label} output`}
             onClick=${() => outputs.open(props.screen)}>${() => isOpen() ? "Open ✓" : "Open"}</button>
-          <label class="video-control">
+          <label class="switch-control video-control">
             <span>Video</span>
-            <select aria-label="Video mode" value=${() => props.screen.videoMode}
-              onChange=${event => actions.screenVideoMode(props.screen.id, event.currentTarget.value)}>
-              <option value="off">Off</option>
-              <option value="cover">Cover</option>
-              <option value="contain">Contain</option>
-            </select>
+            <input aria-label=${() => `${props.screen.label} video`}
+              type="checkbox" role="switch" checked=${() => props.screen.videoEnabled}
+              onChange=${event => actions.screenVideoEnabled(props.screen.id, event.currentTarget.checked)}>
+            <span class="switch-track" aria-hidden="true"></span>
           </label>
           <details class="screen-menu" name="screen-settings">
             <summary class="quiet-action"
@@ -664,6 +675,13 @@ function App(environment, bootstrap, capture) {
                 onPosition=${(position, bank) => actions.screenTextPosition(props.screen.id, bank, position)}
                 onRows=${rows => actions.screenTextRows(props.screen.id, rows)} />
               <div class="screen-settings">
+                <label class="video-fit-control">Video fit
+                  <select aria-label="Video fit" value=${() => props.screen.videoMode}
+                    onChange=${event => actions.screenVideoMode(props.screen.id, event.currentTarget.value)}>
+                    <option value="cover">Cover</option>
+                    <option value="contain">Contain</option>
+                  </select>
+                </label>
                 <label>Width <input aria-label="Screen width" type="number" min="1" value=${() => props.screen.width}
                   onChange=${event => actions.screenWidth(props.screen.id, event.currentTarget.value)}></label>
                 <label>Height <input aria-label="Screen height" type="number" min="1" value=${() => props.screen.height}
@@ -685,7 +703,7 @@ function App(environment, bootstrap, capture) {
 
   function SourcePanel() {
     return html`
-      <section class="sources" classList=${() => ({ "has-sources": sources.length > 0 })} aria-label="Video sources">
+      <section class="sources" aria-label="Video sources">
         <header class="panel-head source-head">
           <h2>Sources</h2>
           <span class="source-status">${() => source()?.label ?? "None selected"}</span>

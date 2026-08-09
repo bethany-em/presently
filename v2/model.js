@@ -26,7 +26,7 @@ export const POSITION_LAYOUT = Object.freeze({
   "bottom-right": ["flex-end", "flex-end", "right"]
 });
 
-const VIDEO_MODES = new Set(["off", "cover", "contain"]);
+const VIDEO_MODES = new Set(["cover", "contain"]);
 const POSITION_SET = new Set(POSITIONS);
 const TAG_COLORS = ["#8b3f4d", "#8a572f", "#6f6730", "#416a4b", "#32666c", "#3e5f87", "#625184", "#7a466f"];
 const HEADING = /^(intro|verse|chorus|bridge|pre[ -]?chorus|instrumental|interlude|outro|ending|vamp|tag)\b[^\r\n]*$/gim;
@@ -68,7 +68,8 @@ export const createPresentation = (makeId, title = "New set", slides = [createSl
 export const createScreen = (makeId, label = "Output", dimensions = DEFAULT_SCREEN_SIZE) => ({
   id: makeId(),
   label,
-  videoMode: "off",
+  videoEnabled: false,
+  videoMode: "cover",
   textPositions: {
     withoutVideo: "center-center",
     withVideo: "bottom-center"
@@ -102,7 +103,7 @@ export function defaultWorkspace(makeId) {
   const stage = createScreen(makeId, "Stage");
   const audience = {
     ...createScreen(makeId, "Audience"),
-    videoMode: "cover"
+    videoEnabled: true
   };
   return {
     slideColumns: DEFAULT_SLIDE_COLUMNS,
@@ -147,13 +148,15 @@ export function normalizeWorkspace(input, makeId) {
   const uniqueId = uniqueIdFactory(makeId);
   const screens = source.screens.map((screen, index) => {
     const positions = screen?.textPositions ?? {};
-    const legacyMode = screen?.video
-      ? (source.fitVideo ? "contain" : "cover")
-      : "off";
+    const legacyMode = source.fitVideo ? "contain" : "cover";
+    const videoMode = VIDEO_MODES.has(screen?.videoMode) ? screen.videoMode : legacyMode;
     return {
       id: uniqueId(screen?.id),
       label: cleanText(screen?.label) || "Screen " + (index + 1),
-      videoMode: VIDEO_MODES.has(screen?.videoMode) ? screen.videoMode : legacyMode,
+      videoEnabled: typeof screen?.videoEnabled === "boolean"
+        ? screen.videoEnabled
+        : screen?.videoMode ? screen.videoMode !== "off" : Boolean(screen?.video),
+      videoMode,
       textPositions: {
         withoutVideo: POSITION_SET.has(positions.withoutVideo) ? positions.withoutVideo : "center-center",
         withVideo: POSITION_SET.has(positions.withVideo) ? positions.withVideo : "bottom-center"
@@ -269,7 +272,7 @@ export const tagColor = label => {
 };
 
 export const activePositionBank = screen =>
-  screen.videoMode === "off" ? "withoutVideo" : "withVideo";
+  screen.videoEnabled ? "withVideo" : "withoutVideo";
 
 export const textScaleCqw = screen => {
   const safeHeight = screen.height * (1 - TEXT_LAYOUT.safeTop - TEXT_LAYOUT.safeBottom);
@@ -286,7 +289,7 @@ export function resolveScreenComposition(screen, entry) {
   return {
     width: screen.width,
     height: screen.height,
-    videoMode: screen.videoMode,
+    videoMode: screen.videoEnabled ? screen.videoMode : "off",
     textPosition: screen.textPositions[activePositionBank(screen)],
     textRows: screen.textRows,
     ...slideCopy(entry)

@@ -242,7 +242,8 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
     renameScreen: (id, value) => setScreen(id, "label", value),
     setScreenWidth: (id, value) => setScreen(id, "width", clamp(value, 1, Number.MAX_SAFE_INTEGER, DEFAULT_SCREEN_SIZE.width)),
     setScreenHeight: (id, value) => setScreen(id, "height", clamp(value, 1, Number.MAX_SAFE_INTEGER, DEFAULT_SCREEN_SIZE.height)),
-    setVideoMode: (id, mode) => setScreen(id, "videoMode", ["off", "cover", "contain"].includes(mode) ? mode : "off"),
+    setVideoEnabled: (id, enabled) => setScreen(id, "videoEnabled", Boolean(enabled)),
+    setVideoMode: (id, mode) => setScreen(id, "videoMode", ["cover", "contain"].includes(mode) ? mode : "cover"),
     setTextPosition: (id, bank, position) => {
       if (!["withoutVideo", "withVideo"].includes(bank) || !POSITIONS.includes(position)) return;
       setScreen(id, "textPositions", bank, position);
