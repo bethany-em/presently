@@ -214,6 +214,33 @@ try {
       singleContextBar: toolbarBox.height >= 44 && toolbarBox.height <= 52
         && !document.querySelector(".toolbar-primary, .toolbar-secondary"),
       setTakesStickyContext: Boolean(activeSetHead && Math.abs(activeSetBox.top - deckBox.top) < 1),
+      setCoversStickyContext: Boolean(activeSetHead
+        && Math.abs(activeSetBox.height - toolbarBox.height) < 1
+        && Math.abs(activeSetBox.left - deckBox.left) < 1
+        && Math.abs(activeSetBox.right - deckBox.right) < 1
+        && document.elementFromPoint(deckBox.left + 12, deckBox.top + toolbarBox.height - 2)
+          ?.closest(".presentation-head") === activeSetHead),
+      titlesFillAvailableWidth: (() => {
+        const deckTitle = document.querySelector(".deck-title").getBoundingClientRect();
+        const toolbarActions = document.querySelector(".toolbar-actions").getBoundingClientRect();
+        const setName = activeSetHead?.querySelector(".presentation-name").getBoundingClientRect();
+        const setTitle = activeSetHead?.querySelector(".presentation-title").getBoundingClientRect();
+        const setActions = activeSetHead?.querySelector(".presentation-actions").getBoundingClientRect();
+        const slideCaption = document.querySelector(".slide-caption");
+        const slideTitle = slideCaption.querySelector("input").getBoundingClientRect();
+        const slideCaptionBox = slideCaption.getBoundingClientRect();
+        const slideEndPadding = parseFloat(getComputedStyle(slideCaption).paddingInlineEnd);
+        const screenHead = document.querySelector(".screen-head");
+        const screenTitle = screenHead.querySelector(".screen-label").getBoundingClientRect();
+        const screenOpen = screenHead.querySelector(".output-open").getBoundingClientRect();
+        const screenGap = parseFloat(getComputedStyle(screenHead).columnGap);
+        return setName && setTitle && setActions
+          && Math.abs(deckTitle.right - toolbarActions.left) < 1
+          && Math.abs(setName.right - setActions.left) < 1
+          && Math.abs(setTitle.right - setName.right) < 1
+          && Math.abs(slideTitle.right - (slideCaptionBox.right - slideEndPadding)) < 1
+          && Math.abs(screenTitle.right + screenGap - screenOpen.left) < 1;
+      })(),
       screenTakesStickyContext: Boolean(activeScreenBox),
       nativeEditSwitch: document.querySelector('[data-test="edit-mode"][role="switch"]')?.type === "checkbox",
       settingsStartClosed: [...document.querySelectorAll(".screen-menu")]
@@ -249,7 +276,9 @@ try {
         return Math.abs(footer.right - controls.right) <= 12 && controls.bottom <= footer.bottom + 1
           && labels.join() === "Screen size,Slide size";
       })(),
-      previewControl: document.querySelector('[aria-label="Thumbnail screen size"]')?.value === window.presently.queries.workspace().previewScreenId
+      previewControl: document.querySelector('[aria-label="Thumbnail screen size"]')?.value === window.presently.queries.workspace().previewScreenId,
+      semiboldSlideText: [...document.querySelectorAll(".canvas-text")]
+        .every(node => getComputedStyle(node).fontWeight === "600")
     };
   });
   console.log(`Live workspace: ${Object.values(workspaceLayout).every(Boolean) ? "fixed deck/source/screens" : "failed"}`);
@@ -370,7 +399,9 @@ try {
   const narrowFits = await page.evaluate(async () => {
     const toolbar = document.querySelector(".toolbar").getBoundingClientRect();
     const toolbarActions = document.querySelector(".toolbar-actions");
+    const deckTitle = document.querySelector(".deck-title").getBoundingClientRect();
     const setActions = document.querySelector(".presentation-actions");
+    const setName = document.querySelector(".presentation-name").getBoundingClientRect();
     const screenMenu = document.querySelector(".screen-menu");
     screenMenu.open = true;
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -384,7 +415,9 @@ try {
       && document.documentElement.scrollWidth <= innerWidth + 1
       && toolbar.height >= 44 && toolbar.height <= 52
       && toolbarActions.scrollWidth <= toolbarActions.clientWidth
+      && Math.abs(deckTitle.right - toolbarActions.getBoundingClientRect().left) < 1
       && setActions.scrollWidth <= setActions.clientWidth
+      && Math.abs(setName.right - setActions.getBoundingClientRect().left) < 1
       && screenPanelFits
       && getComputedStyle(document.querySelector(".slide-grid")).gridTemplateColumns.split(" ").filter(Boolean).length === 3;
   });
