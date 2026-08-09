@@ -158,6 +158,12 @@ try {
       .every(file => runtimeRequests.some(pathname => pathname.endsWith(`/vendor/solid-js/${file}`)))
   };
   console.log(`Runtime graph: ${Object.values(runtimeGraph).every(Boolean) ? "vendored Solid, no node_modules" : "not deployable"}`);
+  const defaultColumns = await page.evaluate(() => {
+    const grid = document.querySelector(".slide-grid");
+    return window.presently.queries.workspace().slideColumns === 3
+      && getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length === 3;
+  });
+  console.log(`Default deck: ${defaultColumns ? "3 columns" : "failed"}`);
   const screenId = await page.evaluate(() => window.presently.queries.workspace().screens[0].id);
   const expectedCopy = await page.evaluate(id => {
     const { commands, queries } = window.presently;
@@ -178,28 +184,72 @@ try {
   console.log(`Deck columns: ${Object.values(columnResults).every(Boolean) ? "2–10 fill width" : "failed"}`);
 
   const workspaceLayout = await page.evaluate(async () => {
-    const deck = document.querySelector(".deck-body");
+    const deck = document.querySelector(".deck-panel");
     const sources = document.querySelector(".sources");
     const outputs = document.querySelector(".outputs");
-    const primary = document.querySelector(".toolbar-primary").getBoundingClientRect();
-    const secondary = document.querySelector(".toolbar-secondary").getBoundingClientRect();
-    const toolbar = document.querySelector(".toolbar").getBoundingClientRect();
+    const toolbar = document.querySelector(".toolbar");
+    const toolbarBox = toolbar.getBoundingClientRect();
+    const screenHeads = [...document.querySelectorAll(".screen-head")];
     const sourceTop = sources.getBoundingClientRect().top;
     deck.scrollTop = deck.scrollHeight;
     await new Promise(resolve => requestAnimationFrame(resolve));
+    const deckBox = deck.getBoundingClientRect();
+    const activeSetHead = document.elementFromPoint(deckBox.left + 12, deckBox.top + 12)?.closest(".presentation-head");
+    const activeSetBox = activeSetHead?.getBoundingClientRect();
+    const addedScreens = Array.from({ length: 4 }, () => window.presently.commands.addScreen());
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    outputs.scrollTop = outputs.scrollHeight;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const outputsBox = outputs.getBoundingClientRect();
+    const activeScreenBox = [...document.querySelectorAll(".screen-head")]
+      .map(head => head.getBoundingClientRect())
+      .find(box => box.top <= outputsBox.top + 1 && box.bottom > outputsBox.top + 1);
+    addedScreens.forEach(id => window.presently.commands.removeScreen(id));
     return {
       deckScrolls: deck.scrollHeight > deck.clientHeight && deck.scrollTop > 0,
       sourcesStayPut: Math.abs(sources.getBoundingClientRect().top - sourceTop) < 1,
       screensStayVisible: outputs.getBoundingClientRect().height === innerHeight,
-      twoTierBar: primary.bottom <= secondary.top + 1 && toolbar.height <= 70,
+      threeToOneShell: outputs.getBoundingClientRect().width / innerWidth >= .22
+        && outputs.getBoundingClientRect().width / innerWidth <= .28,
+      singleContextBar: toolbarBox.height >= 44 && toolbarBox.height <= 52
+        && !document.querySelector(".toolbar-primary, .toolbar-secondary"),
+      setTakesStickyContext: Boolean(activeSetHead && Math.abs(activeSetBox.top - deckBox.top) < 1),
+      screenTakesStickyContext: Boolean(activeScreenBox),
       nativeEditSwitch: document.querySelector('[data-test="edit-mode"][role="switch"]')?.type === "checkbox",
-      advancedStartsClosed: [...document.querySelectorAll(".screen-advanced")].every(details => !details.open),
+      settingsStartClosed: [...document.querySelectorAll(".screen-menu")]
+        .every(details => !details.open),
+      oneRowScreens: screenHeads.every(head => head.getBoundingClientRect().height <= 36),
       noRedundantReadouts: !document.querySelector(".cue-readout, .deck-view-controls, .screen-state"),
       moveAffordances: document.querySelectorAll(".move-mark").length > 1
         && getComputedStyle(document.querySelector(".drag-handle")).cursor === "move",
       historyFits: ["undo", "redo"].every(name => document.querySelector(`[data-test="${name}"]`))
         && document.querySelector(".toolbar-actions").scrollWidth <= document.querySelector(".toolbar-actions").clientWidth,
-      previewControl: document.querySelector('[aria-label="Slide preview screen"]')?.value === window.presently.queries.workspace().previewScreenId
+      noMainMenu: !document.querySelector(".toolbar details"),
+      alignedControls: [...document.querySelectorAll(
+        ".toolbar-actions > .quiet-action, .toolbar-actions > .edit-switch, .presentation-actions .quiet-action, .presentation-actions > .edit-switch"
+      )].every(control => {
+        const box = control.getBoundingClientRect();
+        const header = control.closest(".toolbar, .presentation-head").getBoundingClientRect();
+        return Math.abs(box.height - 28) < 1 && Math.abs((box.top + box.bottom - header.top - header.bottom) / 2) < 1;
+      }),
+      setEditSwitches: document.querySelectorAll(".presentation-head .edit-switch").length
+        === window.presently.queries.deck().presentations.length,
+      editModeFlush: [...document.querySelectorAll(".toolbar .edit-switch, .presentation-head .edit-switch")]
+        .every(control => control.closest(".toolbar, .presentation-head").getBoundingClientRect().right
+          - control.getBoundingClientRect().right <= 12),
+      inlineSelects: [...document.querySelectorAll("select")].every(select => {
+        const style = getComputedStyle(select);
+        return select.getBoundingClientRect().height === 28 && style.backgroundColor === "rgba(0, 0, 0, 0)";
+      }),
+      footerControls: (() => {
+        const footer = document.querySelector(".deck-footer").getBoundingClientRect();
+        const controls = document.querySelector(".deck-size-controls").getBoundingClientRect();
+        const labels = [...document.querySelectorAll(".deck-size-controls label > span:first-child")]
+          .map(label => label.textContent);
+        return Math.abs(footer.right - controls.right) <= 12 && controls.bottom <= footer.bottom + 1
+          && labels.join() === "Screen size,Slide size";
+      })(),
+      previewControl: document.querySelector('[aria-label="Thumbnail screen size"]')?.value === window.presently.queries.workspace().previewScreenId
     };
   });
   console.log(`Live workspace: ${Object.values(workspaceLayout).every(Boolean) ? "fixed deck/source/screens" : "failed"}`);
@@ -227,8 +277,9 @@ try {
       ".collapse-toggle",
       ".slide-tools .drag-handle",
       ".slide-tools .danger",
-      ".set-tools .drag-handle",
-      ".set-tools .danger"
+      ".set-move",
+      ".set-remove",
+      ".screen-menu > summary"
     ];
     return selectors.every(selector => {
       const box = document.querySelector(selector)?.getBoundingClientRect();
@@ -238,24 +289,19 @@ try {
   console.log(`Compact controls: ${compactControls ? "24px minimum targets" : "undersized"}`);
 
   const attributionLayout = await page.evaluate(async () => {
-    const deck = document.querySelector(".deck-body");
     const presentation = [...document.querySelectorAll(".presentation")].at(-1);
-    const details = presentation.querySelector(".attribution-menu");
-    presentation.scrollIntoView({ block: "end" });
-    details.open = true;
+    presentation.scrollIntoView({ block: "start" });
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    details.querySelector(".attribution-panel").scrollIntoView({ block: "nearest" });
-    await new Promise(resolve => requestAnimationFrame(resolve));
-    const panel = details.querySelector(".attribution-panel");
-    const panelBox = panel.getBoundingClientRect();
-    const deckBox = deck.getBoundingClientRect();
-    const result = getComputedStyle(panel).position === "static"
-      && panelBox.top >= deckBox.top - 1 && panelBox.bottom <= deckBox.bottom + 1
-      && panelBox.left >= deckBox.left - 1 && panelBox.right <= deckBox.right + 1;
-    details.open = false;
-    return result;
+    const grid = presentation.querySelector(".slide-grid");
+    const attribution = presentation.querySelector(".set-attribution");
+    const gridBox = grid.getBoundingClientRect();
+    const attributionBox = attribution.getBoundingClientRect();
+    return !presentation.querySelector(".set-menu")
+      && attributionBox.top >= gridBox.bottom
+      && Math.abs(attributionBox.left - gridBox.left) < 1
+      && Math.abs(attributionBox.right - gridBox.right) < 1;
   });
-  console.log(`Attribution disclosure: ${attributionLayout ? "in-flow and reachable" : "clipped"}`);
+  console.log(`Set attribution: ${attributionLayout ? "inline below slides" : "misplaced"}`);
 
   const aspectResults = {
     widescreen: await verifyAspect(page, screenId, 1920, 1080),
@@ -319,18 +365,28 @@ try {
   await dprContext.close();
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.presently.commands.slideColumns(3));
   await settle(page);
   const narrowFits = await page.evaluate(async () => {
-    const primary = document.querySelector(".toolbar-primary").getBoundingClientRect();
-    const secondary = document.querySelector(".toolbar-secondary").getBoundingClientRect();
-    const details = document.querySelector(".attribution-menu");
-    details.open = true;
+    const toolbar = document.querySelector(".toolbar").getBoundingClientRect();
+    const toolbarActions = document.querySelector(".toolbar-actions");
+    const setActions = document.querySelector(".presentation-actions");
+    const screenMenu = document.querySelector(".screen-menu");
+    screenMenu.open = true;
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const fitsOpenDisclosure = document.documentElement.scrollWidth <= innerWidth + 1;
-    details.open = false;
+    const screenPanel = screenMenu.querySelector(".screen-settings-panel");
+    const screenPanelBox = screenPanel.getBoundingClientRect();
+    const screenPanelFits = getComputedStyle(screenPanel).position === "absolute"
+      && screenPanelBox.left >= -1 && screenPanelBox.right <= innerWidth + 1;
+    screenMenu.open = false;
     return fitsOpenDisclosure
       && document.documentElement.scrollWidth <= innerWidth + 1
-      && primary.bottom <= secondary.top + 1;
+      && toolbar.height >= 44 && toolbar.height <= 52
+      && toolbarActions.scrollWidth <= toolbarActions.clientWidth
+      && setActions.scrollWidth <= setActions.clientWidth
+      && screenPanelFits
+      && getComputedStyle(document.querySelector(".slide-grid")).gridTemplateColumns.split(" ").filter(Boolean).length === 3;
   });
   console.log(`Narrow viewport: ${narrowFits ? "fits" : "horizontal overflow"}`);
 
@@ -339,6 +395,7 @@ try {
     !builtInFailures,
     !pageErrors.length,
     Object.values(runtimeGraph).every(Boolean),
+    defaultColumns,
     Object.values(columnResults).every(Boolean),
     Object.values(workspaceLayout).every(Boolean),
     collapsedLiveCue,
@@ -352,7 +409,7 @@ try {
     narrowFits
   ];
   if (!checks.every(Boolean)) {
-    throw new Error(`${builtInFailures} built-in failures, ${pageErrors.length} page errors; runtime=${JSON.stringify(runtimeGraph)} columns=${JSON.stringify(columnResults)} workspace=${JSON.stringify(workspaceLayout)} collapsedLive=${collapsedLiveCue} targets=${compactControls} attribution=${attributionLayout} aspects=${JSON.stringify(aspectResults)} viewer=${viewerWidescreen}/${viewerClassic}/${viewerReconnect} dpr=${dprResult} narrow=${narrowFits}`);
+    throw new Error(`${builtInFailures} built-in failures, ${pageErrors.length} page errors; runtime=${JSON.stringify(runtimeGraph)} defaultColumns=${defaultColumns} columns=${JSON.stringify(columnResults)} workspace=${JSON.stringify(workspaceLayout)} collapsedLive=${collapsedLiveCue} targets=${compactControls} attribution=${attributionLayout} aspects=${JSON.stringify(aspectResults)} viewer=${viewerWidescreen}/${viewerClassic}/${viewerReconnect} dpr=${dprResult} narrow=${narrowFits}`);
   }
 } catch (error) {
   if (serverLog) console.error(serverLog.trim());

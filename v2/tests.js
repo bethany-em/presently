@@ -135,6 +135,7 @@ export async function runTests(app) {
   });
 
   test("migrates legacy screen settings and clamps controls", () => {
+    const defaults = domain.normalizeWorkspace({ screens: [], slideColumns: "invalid" }, ids("default-screen"));
     const migrated = domain.normalizeWorkspace({
       fitVideo: true,
       slideColumns: 99,
@@ -142,6 +143,7 @@ export async function runTests(app) {
       collapsedSetIds: ["a", "a", " ", 7],
       screens: [{ id: "a", label: "Audience", video: true, textRows: 0, width: 1024, height: 768 }]
     }, ids("screen"));
+    assert(defaults.slideColumns === 3, "workspace did not default to three deck columns");
     assert(migrated.slideColumns === 10 && migrated.previewScreenId === "a"
       && migrated.collapsedSetIds.join() === "a", "workspace range, reference, or collapse migration failed");
     assert(migrated.screens[0].videoMode === "contain" && migrated.screens[0].textRows === 1, "legacy video or rows migration failed");
@@ -623,7 +625,7 @@ export async function runTests(app) {
       [document.querySelector(".deck-title"), "Working deck"],
       [document.querySelector(".presentation-title"), "Opening set"],
       [document.querySelector(".slide-caption input"), "Arrival"],
-      [document.querySelector(".attribution-menu textarea"), "Written by A\nPerformed by B"],
+      [document.querySelector(".set-attribution"), "Written by A\nPerformed by B"],
       [document.querySelector(".screen-label"), "Main wall"]
     ];
     assert(!editing() && fields.every(([field]) => !field.readOnly),
@@ -631,10 +633,29 @@ export async function runTests(app) {
     assert(document.querySelector('[data-test="undo"]')
       && document.querySelector('[data-test="add-set"]')
       && document.querySelector(".set-add")
-      && document.querySelector(".document-menu")
-      && document.querySelector(".screen-advanced")
+      && document.querySelector(".set-move")
+      && document.querySelector(".set-remove")
+      && !document.querySelector(".set-menu")
+      && !document.querySelector(".toolbar details")
+      && [...document.querySelectorAll(".toolbar-actions button")].some(button => button.textContent === "Import")
+      && [...document.querySelectorAll(".toolbar-actions button")].some(button => button.textContent === "Export")
+      && [...document.querySelectorAll(".toolbar-actions button")].some(button => button.textContent === "Reset")
+      && document.querySelector(".deck-size-controls")
+      && document.querySelector(".screen-menu")
       && document.querySelector(".output-head button"),
     "Operate hid document or screen structure controls");
+    assert(document.querySelectorAll(".presentation-head .edit-switch").length === deck.presentations.length
+      && [...document.querySelectorAll(".edit-switch > span:first-child")].every(label => label.textContent === "Edit mode"),
+    "sticky headers did not share the Edit mode switch");
+    assert([...document.querySelectorAll(".presentation-head .set-add")]
+      .every(button => button.nextElementSibling?.classList.contains("edit-switch")),
+    "Add slide was not adjacent to Edit mode");
+    const editSwitches = [...document.querySelectorAll(".edit-switch input")];
+    editSwitches[1].click();
+    await wait();
+    assert(editing() && editSwitches.every(input => input.checked),
+      "Edit mode switches did not share state");
+    actions.editing(false);
 
     for (const [field, value] of fields) {
       field.focus();
@@ -669,8 +690,8 @@ export async function runTests(app) {
     const style = getComputedStyle(attribution);
     const wordsSize = parseFloat(getComputedStyle(card.querySelector(".canvas-text")).fontSize);
     assert(attribution.innerText === "Written by A\nPerformed by B", "attribution lost its line break");
-    assert(style.left === "0px" && style.bottom === "0px" && style.padding === "0px"
-      && style.textAlign === "left" && style.whiteSpace === "pre-wrap",
+    assert(style.insetInlineStart === "0px" && style.insetBlockEnd === "0px" && style.padding === "0px"
+      && style.textAlign === "start" && style.whiteSpace === "pre-wrap",
     "attribution was not anchored flush to the lower left");
     assert(style.color.includes("0.55") && parseFloat(style.fontSize) < wordsSize,
       "attribution was not visually dim and subordinate");
