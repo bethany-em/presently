@@ -143,10 +143,16 @@ export async function runTests(app) {
       collapsedSetIds: ["a", "a", " ", 7],
       screens: [{ id: "a", label: "Audience", video: true, textRows: 0, width: 1024, height: 768 }]
     }, ids("screen"));
+    const retained = domain.normalizeWorkspace({
+      screens: [{ videoEnabled: false, videoMode: "contain" }]
+    }, ids("retained-screen"));
     assert(defaults.slideColumns === 3, "workspace did not default to three deck columns");
     assert(migrated.slideColumns === 10 && migrated.previewScreenId === "a"
       && migrated.collapsedSetIds.join() === "a", "workspace range, reference, or collapse migration failed");
-    assert(migrated.screens[0].videoMode === "contain" && migrated.screens[0].textRows === 1, "legacy video or rows migration failed");
+    assert(migrated.screens[0].videoEnabled && migrated.screens[0].videoMode === "contain"
+      && migrated.screens[0].textRows === 1, "legacy video or rows migration failed");
+    assert(!retained.screens[0].videoEnabled && retained.screens[0].videoMode === "contain",
+      "disabled video lost its saved fit");
   });
 
   test("hydrates collapse state by stable set id", () => {
@@ -637,9 +643,9 @@ export async function runTests(app) {
       && document.querySelector(".set-remove")
       && !document.querySelector(".set-menu")
       && !document.querySelector(".toolbar details")
-      && [...document.querySelectorAll(".toolbar-actions button")].some(button => button.textContent === "Import")
-      && [...document.querySelectorAll(".toolbar-actions button")].some(button => button.textContent === "Export")
-      && [...document.querySelectorAll(".toolbar-actions button")].some(button => button.textContent === "Reset")
+      && document.querySelector('.toolbar-actions button[aria-label="Import"]')
+      && document.querySelector('.toolbar-actions button[aria-label="Export"]')
+      && document.querySelector('.toolbar-actions button[aria-label="Reset"]')
       && document.querySelector(".deck-size-controls")
       && document.querySelector(".screen-menu")
       && document.querySelector(".output-head button"),
@@ -651,10 +657,11 @@ export async function runTests(app) {
       .every(button => button.nextElementSibling?.classList.contains("edit-switch")),
     "Add slide was not adjacent to Edit mode");
     const editSwitches = [...document.querySelectorAll(".edit-switch input")];
-    editSwitches[1].click();
+    document.querySelector(".presentation-head .switch-track").click();
     await wait();
-    assert(editing() && editSwitches.every(input => input.checked),
-      "Edit mode switches did not share state");
+    assert(editing() && editSwitches.every(input => input.checked)
+      && document.querySelector(".presentation-content"),
+    "Edit mode switches did not share state or preserve the open set");
     actions.editing(false);
 
     for (const [field, value] of fields) {
@@ -1080,11 +1087,25 @@ export async function runTests(app) {
     actions.screenTextRows(screen.id, 20);
     actions.screenWidth(screen.id, 1024);
     actions.screenHeight(screen.id, 768);
-    actions.screenVideoMode(screen.id, "off");
+    actions.screenVideoMode(screen.id, "contain");
+    actions.screenVideoEnabled(screen.id, false);
     await wait();
     assert(screen.textPositions.withoutVideo === "top-left" && screen.textPositions.withVideo === "bottom-right", "position banks were coupled");
-    assert(screen.textRows === 20 && screen.width / screen.height === 4 / 3, "rows or custom resolution failed");
-    const box = document.querySelector(`[data-screen-id="${screen.id}"] .canvas`).getBoundingClientRect();
+    assert(screen.textRows === 20 && screen.width / screen.height === 4 / 3
+      && !screen.videoEnabled && screen.videoMode === "contain", "rows, video, or custom resolution failed");
+    const card = document.querySelector(`[data-screen-id="${screen.id}"]`);
+    const videoSwitch = card.querySelector('[role="switch"][aria-label$=" video"]');
+    const fit = card.querySelector('[aria-label="Video fit"]');
+    assert(videoSwitch?.type === "checkbox" && fit?.closest(".screen-menu")
+      && !card.querySelector(".video-control select"), "screen video controls did not match their simple and advanced roles");
+    videoSwitch.click();
+    fit.value = "cover";
+    fit.dispatchEvent(new Event("change", { bubbles: true }));
+    await wait();
+    assert(screen.videoEnabled && screen.videoMode === "cover", "video switch or fit did not update the screen");
+    videoSwitch.click();
+    assert(!screen.videoEnabled && screen.videoMode === "cover", "turning video off forgot its fit");
+    const box = card.querySelector(".canvas").getBoundingClientRect();
     assert(Math.abs(box.width / box.height - 4 / 3) < .01, "custom preview aspect distorted");
   });
 
@@ -1154,6 +1175,7 @@ export async function runTests(app) {
       assert(media.selected()?.stream === cameras[1]["camera-1"].stream, "refresh did not preserve selection by device id");
       assert(cameras[0]["camera-1"].track.stopped && cameras[0]["camera-2"].track.stopped, "refresh leaked the old inventory");
       const screen = workspace.screens[0];
+      actions.screenVideoEnabled(screen.id, true);
       actions.screenVideoMode(screen.id, "cover");
       actions.clearSelection();
       await wait();
@@ -1177,7 +1199,7 @@ export async function runTests(app) {
       assert(media.selected()?.stream === cameras[1]["camera-2"].stream && slow.track.stopped, "a stale display replaced the newer source or leaked tracks");
     } finally {
       media.clearSelection();
-      actions.screenVideoMode(workspace.screens[0].id, "off");
+      actions.screenVideoEnabled(workspace.screens[0].id, false);
       Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: native });
     }
   });

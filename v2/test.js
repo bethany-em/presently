@@ -191,9 +191,23 @@ try {
     const toolbarBox = toolbar.getBoundingClientRect();
     const screenHeads = [...document.querySelectorAll(".screen-head")];
     const sourceTop = sources.getBoundingClientRect().top;
-    deck.scrollTop = deck.scrollHeight;
+    deck.scrollTop = 0;
     await new Promise(resolve => requestAnimationFrame(resolve));
     const deckBox = deck.getBoundingClientRect();
+    const firstSetStart = document.querySelector(".presentation-head").getBoundingClientRect().top - deckBox.top;
+    const stickyPointsX = [deckBox.left + 1, deckBox.left + 12, deckBox.right - 12, deckBox.right - 1];
+    const stickyPointsY = [deckBox.top + 1, deckBox.top + toolbarBox.height / 2, deckBox.top + toolbarBox.height - 1];
+    let stickyHandoffsCovered = true;
+    for (let top = Math.ceil(firstSetStart); top <= deck.scrollHeight - deck.clientHeight; top++) {
+      deck.scrollTop = top;
+      stickyHandoffsCovered = stickyPointsX.every(x => stickyPointsY.every(y => {
+        const element = document.elementFromPoint(x, y);
+        return !element?.closest(".toolbar") || Boolean(element.closest(".presentation-head"));
+      }));
+      if (!stickyHandoffsCovered) break;
+    }
+    deck.scrollTop = deck.scrollHeight;
+    await new Promise(resolve => requestAnimationFrame(resolve));
     const activeSetHead = document.elementFromPoint(deckBox.left + 12, deckBox.top + 12)?.closest(".presentation-head");
     const activeSetBox = activeSetHead?.getBoundingClientRect();
     const addedScreens = Array.from({ length: 4 }, () => window.presently.commands.addScreen());
@@ -208,12 +222,14 @@ try {
     return {
       deckScrolls: deck.scrollHeight > deck.clientHeight && deck.scrollTop > 0,
       sourcesStayPut: Math.abs(sources.getBoundingClientRect().top - sourceTop) < 1,
+      sourcesStayCompact: sources.getBoundingClientRect().height <= innerHeight / 4 + 1,
       screensStayVisible: outputs.getBoundingClientRect().height === innerHeight,
       threeToOneShell: outputs.getBoundingClientRect().width / innerWidth >= .22
         && outputs.getBoundingClientRect().width / innerWidth <= .28,
       singleContextBar: toolbarBox.height >= 44 && toolbarBox.height <= 52
         && !document.querySelector(".toolbar-primary, .toolbar-secondary"),
       setTakesStickyContext: Boolean(activeSetHead && Math.abs(activeSetBox.top - deckBox.top) < 1),
+      stickyHandoffsCovered,
       setCoversStickyContext: Boolean(activeSetHead
         && Math.abs(activeSetBox.height - toolbarBox.height) < 1
         && Math.abs(activeSetBox.left - deckBox.left) < 1
@@ -248,7 +264,8 @@ try {
       oneRowScreens: screenHeads.every(head => head.getBoundingClientRect().height <= 36),
       noRedundantReadouts: !document.querySelector(".cue-readout, .deck-view-controls, .screen-state"),
       moveAffordances: document.querySelectorAll(".move-mark").length > 1
-        && getComputedStyle(document.querySelector(".drag-handle")).cursor === "move",
+        && getComputedStyle(document.querySelector(".drag-handle")).cursor === "move"
+        && getComputedStyle(document.querySelector(".slide-tools .move-mark path")).stroke !== "none",
       historyFits: ["undo", "redo"].every(name => document.querySelector(`[data-test="${name}"]`))
         && document.querySelector(".toolbar-actions").scrollWidth <= document.querySelector(".toolbar-actions").clientWidth,
       noMainMenu: !document.querySelector(".toolbar details"),
@@ -259,6 +276,8 @@ try {
         const header = control.closest(".toolbar, .presentation-head").getBoundingClientRect();
         return Math.abs(box.height - 28) < 1 && Math.abs((box.top + box.bottom - header.top - header.bottom) / 2) < 1;
       }),
+      controlFontMatchesV1: [...document.querySelectorAll("button, select, summary, .switch-control")]
+        .every(control => getComputedStyle(control).fontSize === "14px"),
       setEditSwitches: document.querySelectorAll(".presentation-head .edit-switch").length
         === window.presently.queries.deck().presentations.length,
       editModeFlush: [...document.querySelectorAll(".toolbar .edit-switch, .presentation-head .edit-switch")]
@@ -266,7 +285,8 @@ try {
           - control.getBoundingClientRect().right <= 12),
       inlineSelects: [...document.querySelectorAll("select")].every(select => {
         const style = getComputedStyle(select);
-        return select.getBoundingClientRect().height === 28 && style.backgroundColor === "rgba(0, 0, 0, 0)";
+        return (select.closest("details:not([open])") || select.getBoundingClientRect().height === 28)
+          && style.backgroundColor === "rgba(0, 0, 0, 0)";
       }),
       footerControls: (() => {
         const footer = document.querySelector(".deck-footer").getBoundingClientRect();
@@ -277,6 +297,11 @@ try {
           && labels.join() === "Screen size,Slide size";
       })(),
       previewControl: document.querySelector('[aria-label="Thumbnail screen size"]')?.value === window.presently.queries.workspace().previewScreenId,
+      screenVideoControls: [...document.querySelectorAll(".output-card")].every(card =>
+        card.querySelector('.video-control input[role="switch"]')?.type === "checkbox"
+        && !card.querySelector(".video-control select")
+        && card.querySelector('[aria-label="Video fit"]')?.closest(".screen-menu")
+      ),
       semiboldSlideText: [...document.querySelectorAll(".canvas-text")]
         .every(node => getComputedStyle(node).fontWeight === "600")
     };
