@@ -3,6 +3,7 @@ import { createStore, reconcile, unwrap } from "solid-js/store";
 import { createHistory } from "./history.js";
 import {
   DEFAULT_SCREEN_SIZE,
+  DEFAULT_SLIDE_COLUMNS,
   POSITIONS,
   clamp,
   createPresentation,
@@ -247,7 +248,7 @@ export function createController({ initialDeck, initialWorkspace, storage, stora
       setScreen(id, "textPositions", bank, position);
     },
     setTextRows: (id, rows) => setScreen(id, "textRows", clamp(rows, 1, 20, 8)),
-    setSlideColumns: value => setWorkspace("slideColumns", clamp(value, 2, 10, 2)),
+    setSlideColumns: value => setWorkspace("slideColumns", clamp(value, 2, 10, DEFAULT_SLIDE_COLUMNS)),
     setPreviewScreen: id => {
       if (workspaceState.screens.some(screen => screen.id === id)) setWorkspace("previewScreenId", id);
     }

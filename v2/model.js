@@ -1,4 +1,5 @@
 export const DEFAULT_SCREEN_SIZE = Object.freeze({ width: 1920, height: 1080 });
+export const DEFAULT_SLIDE_COLUMNS = 3;
 export const TEXT_LAYOUT = Object.freeze({
   safeX: 0.06,
   safeTop: 0.07,
@@ -104,7 +105,7 @@ export function defaultWorkspace(makeId) {
     videoMode: "cover"
   };
   return {
-    slideColumns: 2,
+    slideColumns: DEFAULT_SLIDE_COLUMNS,
     previewScreenId: stage.id,
     collapsedSetIds: [],
     screens: [stage, audience]
@@ -166,7 +167,7 @@ export function normalizeWorkspace(input, makeId) {
     ? source.previewScreenId
     : screens[0]?.id ?? null;
   return {
-    slideColumns: clamp(source.slideColumns, 2, 10, 2),
+    slideColumns: clamp(source.slideColumns, 2, 10, DEFAULT_SLIDE_COLUMNS),
     previewScreenId,
     collapsedSetIds,
     screens
